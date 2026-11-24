@@ -104,7 +104,8 @@ fun AppAccessScreen(controller: MonitorController, labels: AppLabels, key: AppKe
                 val merged = JSONArray(List(current.length()) { i ->
                     current.getJSONObject(i).let { if (it.getString("op") == op) changed else it }
                 })
-                ops = JSONObject(ops.toString()).put("ops", merged).put("failed", result.optJSONArray("failed") ?: JSONArray())
+                ops = JSONObject(ops.toString()).put("ops", merged).put("lock", result.opt("lock"))
+                    .put("failed", result.optJSONArray("failed") ?: JSONArray())
             } else {
                 ops = ops?.let { JSONObject(it.toString()).put("failed", JSONArray().put(op)) }
             }
@@ -288,15 +289,14 @@ fun AppAccessScreen(controller: MonitorController, labels: AppLabels, key: AppKe
 }
 
 /**
- * The app ops this app can use, one switch each: off sets it to ignore, on puts back the mode it had.
- * Each row says the mode Android reports; an app the monitor may not change shows the state alone.
+ * The app ops this app can use. Each row shows the mode Android reports and why it is read-only, if applicable.
  */
 @Composable
 private fun OpsGroup(ops: JSONObject?, rules: List<OpRule>, pending: Boolean, onChange: (String, Boolean) -> Unit) {
     val context = LocalContext.current
     val rows = ops?.optJSONArray("ops") ?: return
     if (rows.length() == 0) return
-    val editable = ops.optString("lock").isEmpty()
+    val targetEditable = ops.optString("lock").isEmpty()
     val failed = ops.optJSONArray("failed")?.let { a -> List(a.length(), a::getString) }.orEmpty()
     val byOp = rules.associateBy { it.op }
     GroupTitle(stringResource(R.string.access_group_ops), Modifier.padding(top = 16.dp))
@@ -307,6 +307,12 @@ private fun OpsGroup(ops: JSONObject?, rules: List<OpRule>, pending: Boolean, on
             val rule = byOp[op] ?: continue
             val allowed = row.optBoolean("allowed")
             val mode = row.optString("mode")
+            val restriction = when (row.optString("lock")) {
+                "uid" -> R.string.appop_lock_uid
+                "external" -> R.string.appop_lock_external
+                else -> null
+            }
+            val editable = targetEditable && restriction == null
             @Suppress("DiscouragedApi")
             val labelId = context.resources.getIdentifier("appop_${rule.label}", "string", context.packageName)
             if (i > 0) InsetDivider()
@@ -314,13 +320,14 @@ private fun OpsGroup(ops: JSONObject?, rules: List<OpRule>, pending: Boolean, on
             ListRow(
                 if (labelId != 0) stringResource(labelId) else op,
                 subtitle = when {
+                    restriction != null -> stringResource(restriction)
                     failedRow -> stringResource(if (allowed) R.string.access_deny_failed else R.string.access_allow_failed)
                     !allowed -> stringResource(R.string.appop_mode_denied)
                     mode == "allow" -> stringResource(R.string.appop_mode_allow)
                     mode == "foreground" -> stringResource(R.string.appop_mode_foreground)
                     else -> stringResource(R.string.appop_mode_default)
                 },
-                subtitleColor = if (failedRow) StatusWarning else MaterialTheme.colorScheme.onSurfaceVariant,
+                subtitleColor = if (restriction != null || failedRow) StatusWarning else MaterialTheme.colorScheme.onSurfaceVariant,
                 leading = { IconTile(groupIcon(rule.icon)) },
                 onClick = if (editable && !pending) ({ onChange(op, !allowed) }) else null
             ) {
@@ -329,7 +336,7 @@ private fun OpsGroup(ops: JSONObject?, rules: List<OpRule>, pending: Boolean, on
             }
         }
     }
-    if (editable) GroupFooter(stringResource(R.string.access_ops_note))
+    if (targetEditable) GroupFooter(stringResource(R.string.access_ops_note))
 }
 
 @Composable

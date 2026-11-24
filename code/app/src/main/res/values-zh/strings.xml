@@ -623,7 +623,7 @@
     <string name="settings_auto_refreeze">重新启用时自动停用</string>
     <string name="settings_auto_refreeze_desc">揪咪打开时每几分钟检查一次自己停用过的应用。发现重新启用时会记入时间线。</string>
     <string name="expert_title">开启专家模式？</string>
-    <string name="expert_body">开启后，你可以停用或卸载和系统深度绑定的组件、手机依赖的应用和默认应用，也可以改动会同时影响其他应用、用户或防火墙规则的权限与联网设置。这可能让相关功能失效，严重时手机无法开机，只能恢复出厂设置，手机里的数据也会丢失。\n\n揪咪自身、常驻系统应用和正在使用的输入法仍不能改动，确保你还能在这里撤销。\n\n揪咪无法判断每个组件的用途，也不保证改动后一定能恢复。请只改动你清楚用途的组件，风险由你自行承担。</string>
+    <string name="expert_body">开启后，你可以停用或卸载和系统深度绑定的组件、手机依赖的应用和默认应用，也可以改动会同时影响其他应用、用户或防火墙规则的权限与联网设置。这可能让相关功能失效，严重时手机无法开机，只能恢复出厂设置，手机里的数据也会丢失。\n\n揪咪自身、关键系统组件、常驻系统应用和当前输入法仍受停用和卸载保护。\n\n揪咪无法判断每个组件的用途，也不保证改动后一定能恢复。请只改动你清楚用途的组件，风险由你自行承担。</string>
     <string name="expert_confirm">我了解，开启</string>
     <string name="risk_title_core">可能导致手机无法正常启动</string>
     <string name="risk_core">这是和系统深度绑定的核心组件。改动后相关功能可能失效，严重时手机无法开机，只能恢复出厂设置。揪咪不保证能恢复，风险由你自行承担。</string>
@@ -789,7 +789,9 @@
     <string name="access_warn_external">专家模式：这条联网规则由揪咪以外的工具设置，改动会覆盖它。</string>
     <string name="access_warn_chain">专家模式：开启防火墙会同时启用其他工具留在其中的规则。</string>
     <string name="access_group_ops">系统开关</string>
-    <string name="access_ops_note">只改这个应用在 Android 中的 AppOps 设置，重启后仍然有效。关闭后系统会静默拒绝它；重新打开会恢复它原来的设置。</string>
+    <string name="access_ops_note">可用开关因设备和应用而异。改动在重启后仍然有效。关闭后，系统会静默拒绝该应用的这项操作。重新打开会恢复揪咪为该应用保存的设置。</string>
+    <string name="appop_lock_uid">Android 已对整个 UID 禁用这项操作。</string>
+    <string name="appop_lock_external">这项操作是在揪咪以外被禁用的。</string>
     <string name="appop_mode_denied">已拒绝</string>
     <string name="appop_mode_allow">已允许</string>
     <string name="appop_mode_foreground">仅在使用时允许</string>

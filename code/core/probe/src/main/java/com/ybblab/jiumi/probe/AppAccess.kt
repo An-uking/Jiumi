@@ -30,10 +30,17 @@ internal class AppAccess(context: Context, directory: File, private val self: St
     )
     /** An app op's mode for the package and for its whole UID, null where none is set. */
     data class OpState(val pkg: String?, val uid: String?) {
+        val packageMode get() = pkg ?: "default"
         val denied get() = pkg in deniedModes || uid in deniedModes
         /** What decides it: a denial wherever set, else the package's own mode, else the UID's, else the default. */
         val mode get() = listOf(uid, pkg).firstOrNull { it in deniedModes }
             ?: pkg?.takeIf { it != "default" } ?: uid ?: "default"
+
+        fun editLock(savedMode: String): String? = when {
+            uid in deniedModes -> "uid"
+            denied && (pkg != "ignore" || savedMode.isEmpty() || savedMode in deniedModes) -> "external"
+            else -> null
+        }
     }
     private data class Grant(val name: String, val allowed: Boolean?, val editable: Boolean, val role: Boolean = false)
     private data class Firewall(val enabled: Boolean, val denied: Boolean, val boot: String)
@@ -247,13 +254,7 @@ internal class AppAccess(context: Context, directory: File, private val self: St
     private fun opState(t: Target, op: String): OpState? =
         command("appops", "get", "--user", "${t.user}", t.pkg, op)?.let { opState(it, op) }
 
-    /**
-     * Reads, denies or restores app ops of [t]: [names] for "ops", or the one op to change. Denying sets
-     * the package's mode to ignore, so the app is quietly refused rather than crashing, and remembers the
-     * mode it had; restoring puts that mode back (the default when none was remembered) and lifts a
-     * UID-wide denial still in the way. Each change is read back. App ops are per package, so a shared
-     * UID does not lock them.
-     */
+    /** Sets and restores only the selected package's mode. A UID denial or unowned package denial is read-only. */
     private fun ops(t: Target, saved: JSONObject, action: String, names: List<String>): JSONObject {
         val lock = t.lock?.takeIf { it != "shared" }
         val key = "ops:${t.identity}"
@@ -262,31 +263,34 @@ internal class AppAccess(context: Context, directory: File, private val self: St
         if (action != "ops") {
             val op = names.single()
             val before = opState(t, op)
-            if (lock != null || before == null || target(t.pkg, t.uid, t.user, t.expert) != t) {
+            val savedMode = owned.optString(op)
+            if (lock != null || before == null || before.editLock(savedMode) != null ||
+                target(t.pkg, t.uid, t.user, t.expert) != t
+            ) {
                 failed.put(op)
             } else {
                 val allow = action == "opAllow"
-                if (!allow && !before.denied) {
-                    if (!owned.has(op)) owned.put(op, before.pkg ?: "default")
-                    write(saved)
-                    command("appops", "set", "--user", "${t.user}", t.pkg, op, "ignore")
-                } else if (allow && before.denied) {
-                    val restore = owned.optString(op).takeIf { it.isNotEmpty() && it !in deniedModes } ?: "default"
-                    if (before.pkg in deniedModes) command("appops", "set", "--user", "${t.user}", t.pkg, op, restore)
-                    if (opState(t, op)?.uid in deniedModes) {
-                        command("appops", "set", "--user", "${t.user}", "--uid", t.pkg, op, "default")
+                if (before.denied == allow) {
+                    val desiredMode = if (allow) savedMode else "ignore"
+                    if (!allow) {
+                        owned.put(op, before.packageMode)
+                        write(saved)
+                    }
+                    command("appops", "set", "--user", "${t.user}", t.pkg, op, desiredMode)
+                    val after = opState(t, op)
+                    if (after == null || after.packageMode != desiredMode || after.denied == allow) failed.put(op)
+                    if (after != null && after.pkg != "ignore") {
+                        owned.remove(op)
+                        write(saved)
                     }
                 }
-                val after = opState(t, op)
-                if (after == null || after.denied == allow) failed.put(op)
-                if (after != null && !after.denied) owned.remove(op)
-                write(saved)
             }
         }
         val rows = JSONArray()
         for (op in names) {
             val state = opState(t, op) ?: continue
-            rows.put(JSONObject().put("op", op).put("mode", state.mode).put("allowed", !state.denied))
+            rows.put(JSONObject().put("op", op).put("mode", state.mode).put("allowed", !state.denied)
+                .put("lock", state.editLock(owned.optString(op))))
         }
         if (rows.length() == 0 && names.isNotEmpty()) return JSONObject().put("lock", lock ?: "unknown").put("failed", failed)
         return JSONObject().put("lock", lock).put("ops", rows).put("failed", failed)

@@ -631,7 +631,7 @@
     <string name="settings_auto_refreeze">Disable again when re-enabled</string>
     <string name="settings_auto_refreeze_desc">While open, Jiumi checks apps it disabled every few minutes. It records detected re-enables in the timeline.</string>
     <string name="expert_title">Turn on expert mode?</string>
-    <string name="expert_body">You can then disable or uninstall components bound deeply into the system, apps the phone relies on and default apps, and change access that also affects other apps, users or firewall rules. This can break related features, or at worst stop the phone from starting, leaving only a factory reset, which erases what is on it.\n\nJiumi itself, persistent system apps and the keyboard in use stay out of reach, so you can still undo from here.\n\nJiumi cannot tell what each component does and does not promise a change can be undone. Change only components whose purpose you know. You assume the risk.</string>
+    <string name="expert_body">You can then disable or uninstall components bound deeply into the system, apps the phone relies on and default apps, and change access that also affects other apps, users or firewall rules. This can break related features, or at worst stop the phone from starting, leaving only a factory reset, which erases what is on it.\n\nJiumi, essential system components, persistent system apps and the active keyboard are protected against disabling and uninstalling.\n\nJiumi cannot tell what each component does and does not promise a change can be undone. Change only components whose purpose you know. You assume the risk.</string>
     <string name="expert_confirm">I understand, turn on</string>
     <string name="risk_title_core">May stop the phone from starting properly</string>
     <string name="risk_core">This core component is bound deeply into the system. Changing it may break related features, or at worst stop the phone from starting, leaving only a factory reset. Jiumi does not promise it can be undone; the risk is yours.</string>
@@ -798,7 +798,9 @@
     <string name="access_warn_external">Expert mode: this network rule was set outside Jiumi; changing it overrides that tool.</string>
     <string name="access_warn_chain">Expert mode: turning the firewall on also activates rules other tools left in it.</string>
     <string name="access_group_ops">System switches</string>
-    <string name="access_ops_note">Android’s app ops for this app only. They stay after a restart. Turning one off refuses the app quietly; turning it on puts back the setting it had.</string>
+    <string name="access_ops_note">Available switches depend on the device and app. Changes stay after a restart. Turning a switch off quietly blocks the operation for this app. Turning it back on restores the setting Jiumi saved for it.</string>
+    <string name="appop_lock_uid">Android blocks this operation for the entire UID.</string>
+    <string name="appop_lock_external">This operation was blocked outside Jiumi.</string>
     <string name="appop_mode_denied">Denied</string>
     <string name="appop_mode_allow">Allowed</string>
     <string name="appop_mode_foreground">Allowed while in use</string>

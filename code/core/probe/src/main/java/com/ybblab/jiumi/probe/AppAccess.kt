@@ -84,32 +84,16 @@ internal class AppAccess(context: Context, directory: File, private val self: St
 
     private fun grants(t: Target): List<Grant>? {
         val dump = command("dumpsys", "package", t.pkg) ?: return null
-        val lines = dump.lines()
-        val start = lines.indexOfFirst { it.trim().startsWith("Package [${t.pkg}] (") }
-            .takeIf { it >= 0 }
-        // Package entries are followed by per-user blocks. Use only the installed target user's block.
-        if (start == null) return null
-        val userStart = (start + 1 until lines.size).firstOrNull {
-            lines[it].trimStart().startsWith("User ${t.user}: ") && "installed=true" in lines[it]
-        } ?: return null
-        val userLines = lines.drop(userStart + 1).takeWhile { !userRow.containsMatchIn(it) && (it.isBlank() || it.startsWith("      ")) }
-        val runtime = userLines.dropWhile { it.trim() != "runtime permissions:" }.drop(1)
-            .takeWhile { it.startsWith("        ") }.mapNotNull { grantRow.matchEntire(it.trim()) }
-        val installed = lines.subList(start, userStart).dropWhile { it.trim() != "install permissions:" }.drop(1)
-            .takeWhile { it.startsWith("      ") }.mapNotNull { grantRow.matchEntire(it.trim()) }
-        val states = (installed + runtime).associateBy { it.groupValues[1] }
-        val runtimeNames = runtime.map { it.groupValues[1] }.toSet()
-        val requested = lines.subList(start, userStart).dropWhile { it.trim() != "requested permissions:" }.drop(1)
-            .takeWhile { it.startsWith("      ") }.map(String::trim).filter(permissionName::matches)
-        return requested.distinct().map { name ->
-            val state = states[name]
-            val flags = state?.groupValues?.get(3).orEmpty().split('|').map(String::trim)
+        val permissions = PackageDump.permissions(dump, t.pkg, t.uid % USER_RANGE, t.user) ?: return null
+        return permissions.requested.map { name ->
+            val state = permissions.runtime[name] ?: permissions.installed[name]
+            val flags = state?.flags.orEmpty()
             val info = runCatching { pm.getPermissionInfo(name, 0) }.getOrNull()
             // The system refuses fixed grants; a role's grant may be taken back, in expert mode only.
-            val editable = t.lock == null && name in runtimeNames &&
+            val editable = t.lock == null && name in permissions.runtime &&
                 info?.protection == PermissionInfo.PROTECTION_DANGEROUS &&
                 flags.none { it == "SYSTEM_FIXED" || it == "POLICY_FIXED" || it == "GRANTED_BY_ROLE" && !t.expert }
-            Grant(name, state?.groupValues?.get(2)?.toBooleanStrictOrNull(), editable, "GRANTED_BY_ROLE" in flags)
+            Grant(name, state?.allowed, editable, "GRANTED_BY_ROLE" in flags)
         }
     }
 
@@ -332,10 +316,8 @@ internal class AppAccess(context: Context, directory: File, private val self: St
         private val opList = Regex("""[A-Z0-9_]+(?:,[A-Z0-9_]+)*""")
         private val deniedModes = setOf("ignore", "deny", "errored")
         private val packageRow = Regex("""package:([A-Za-z0-9_.]+)\s+uid:(\d+)""")
-        private val userRow = Regex("""^\s*User \d+:""")
         private val userList = Regex("""UserInfo\{(\d+):[^}]*\}(?:\s+running)?""")
         private val permissionName = Regex("""[A-Za-z0-9_.]+""")
-        private val grantRow = Regex("""([A-Za-z0-9_.]+): granted=(true|false)(?:, flags=\[(.*)])?""")
         private val firewallRow = Regex("""(\d+) ((?:[A-Z0-9_]+_MATCH)(?: [A-Z0-9_]+_MATCH)*)""")
     }
 }

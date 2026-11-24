@@ -166,6 +166,9 @@ fun AppAccessScreen(controller: MonitorController, labels: AppLabels, key: AppKe
     val permissionFailures = state?.optJSONArray("failed")
     val failedNames = permissionFailures?.let { array -> List(array.length()) { array.getString(it) } }.orEmpty()
     val switchFailed = single && state?.optBoolean("failed") == true
+    val peers = state?.optJSONArray("peers")?.let { a -> List(a.length(), a::getString) }.orEmpty()
+        .joinToString(stringResource(R.string.list_separator))
+    val warn = state?.optJSONArray("warn")?.let { a -> List(a.length(), a::getString) }.orEmpty()
 
     Column(
         Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
@@ -185,7 +188,11 @@ fun AppAccessScreen(controller: MonitorController, labels: AppLabels, key: AppKe
         }
         Spacer(Modifier.height(20.dp))
         val readable = state != null && (state?.has(if (single) "allowed" else "rows") == true)
-        if (lock.isEmpty() && readable) GroupTitle(stringResource(R.string.access_scope))
+        if (lock.isEmpty() && readable) {
+            if (!single && "shared" in warn) {
+                GroupFooter(stringResource(R.string.access_warn_shared, peers), warning = true)
+            } else GroupTitle(stringResource(R.string.access_scope))
+        }
         if (single && (readable || lock.isNotEmpty() && lock != "unknown" && lock != "monitor")) {
             val allowed = state?.optBoolean("allowed") == true
             Card {
@@ -272,14 +279,11 @@ fun AppAccessScreen(controller: MonitorController, labels: AppLabels, key: AppKe
             }))
             switchFailed -> Feedback(stringResource(R.string.access_rule_failed)) { refresh(lastAction.first) }
         }
-        val peers = state?.optJSONArray("peers")?.let { a -> List(a.length(), a::getString) }.orEmpty()
-            .joinToString(stringResource(R.string.list_separator))
         if (!pending && lock == "shared" && peers.isNotEmpty()) GroupFooter(peers)
         // What expert mode let through: said plainly, since the change reaches past this app.
-        val warn = state?.optJSONArray("warn")?.let { a -> List(a.length(), a::getString) }.orEmpty()
         if (!pending && lock.isEmpty()) warn.forEach { w ->
             when (w) {
-                "shared" -> GroupFooter(stringResource(R.string.access_warn_shared, peers), warning = true)
+                "shared" -> if (single) GroupFooter(stringResource(R.string.access_warn_shared, peers), warning = true)
                 "users" -> GroupFooter(stringResource(R.string.access_warn_users), warning = true)
                 "external" -> GroupFooter(stringResource(R.string.access_warn_external), warning = true)
                 "chain" -> GroupFooter(stringResource(R.string.access_warn_chain), warning = true)

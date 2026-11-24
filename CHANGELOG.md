@@ -7,7 +7,7 @@ Versions follow [Semantic Versioning](https://semver.org).
 ## [Unreleased]
 
 - **System switches in Permissions.** Block clipboard reads, background activity and other supported operations. Turn a switch back on to restore the setting Jiumi saved for that app.
-- **Expanded Expert mode.** Manage more default and system apps, revoke eligible role-granted permissions, and see warnings about wider effects. Jiumi, essential system components, persistent apps and the active keyboard keep their disable and uninstall protections.
+- **Expanded Expert mode.** Manage more default and system apps and change eligible role-granted and shared-UID permissions. Jiumi warns about wider effects. Jiumi, essential system components, persistent apps and the active keyboard keep their disable and uninstall protections.
 - Tap a package name to copy it. Network blocking requires Android 14 or later and clears on restart.
 - Fix a crash when the monitor reads location providers on Android 17.
 - Fix Wireless debugging pairing stalls. Monitoring resumes when Wi-Fi and Wireless debugging return with valid pairing.

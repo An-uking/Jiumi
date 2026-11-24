@@ -46,10 +46,13 @@ import org.json.JSONObject
 
 private data class PermissionRow(
     val name: String, val label: String, val group: String, val icon: ImageVector,
-    val allowed: Boolean?, val editable: Boolean
+    val allowed: Boolean?, val editable: Boolean, val role: Boolean
 )
 
-/** What one access page manages: the app's permissions (clipboard reads included), or its network access. */
+/** An app op from rules/app_ops.json; [permission] is what the app must request for it to be listed. */
+private data class OpRule(val op: String, val permission: String?, val label: String, val icon: String)
+
+/** What one access page manages: the app's permissions and app ops, or its network access. */
 enum class AccessKind(val read: String) { PERMISSIONS("permissions"), NETWORK("network") }
 
 @Composable
@@ -71,24 +74,47 @@ fun AppAccessScreen(controller: MonitorController, labels: AppLabels, key: AppKe
             pending = false
         }
     }
-    // Clipboard reads are an app op rather than a permission, so they are read and changed on their own.
-    var clip by remember(key, kind) { mutableStateOf<JSONObject?>(null) }
-    var clipPending by remember(key, kind) { mutableStateOf(kind == AccessKind.PERMISSIONS) }
-    fun changeClipboard(allow: Boolean) {
-        if (clipPending) return
-        clipPending = true
+    // App ops are not permissions, so they are read and changed on their own, once the permissions say
+    // which of them this app can use.
+    val opRules = remember(context) {
+        val list = JSONObject(context.assets.open("rules/app_ops.json").bufferedReader().use { it.readText() }).getJSONArray("ops")
+        List(list.length()) { i ->
+            val o = list.getJSONObject(i)
+            OpRule(o.getString("op"), o.optString("permission").ifEmpty { null }, o.getString("label"), o.getString("icon"))
+        }
+    }
+    var ops by remember(key, kind) { mutableStateOf<JSONObject?>(null) }
+    var opsPending by remember(key, kind) { mutableStateOf(kind == AccessKind.PERMISSIONS) }
+    fun readOps(permissions: JSONObject?) {
+        val requested = permissions?.optJSONArray("rows")?.let { a -> List(a.length()) { a.getJSONObject(it).getString("name") }.toSet() }
+        val names = opRules.filter { it.permission == null || requested?.contains(it.permission) == true }.map { it.op }
         scope.launch {
-            clip = controller.appAccess(key, if (allow) "clipboardAllow" else "clipboardDeny")
-            clipPending = false
+            ops = if (requested == null || names.isEmpty()) null else controller.appAccess(key, "ops", names.joinToString(","))
+            opsPending = false
+        }
+    }
+    fun changeOp(op: String, allow: Boolean) {
+        if (opsPending) return
+        opsPending = true
+        scope.launch {
+            val result = controller.appAccess(key, if (allow) "opAllow" else "opDeny", op)
+            val changed = result?.optJSONArray("ops")?.optJSONObject(0)
+            val current = ops?.optJSONArray("ops")
+            if (changed != null && current != null) {
+                val merged = JSONArray(List(current.length()) { i ->
+                    current.getJSONObject(i).let { if (it.getString("op") == op) changed else it }
+                })
+                ops = JSONObject(ops.toString()).put("ops", merged).put("failed", result.optJSONArray("failed") ?: JSONArray())
+            } else {
+                ops = ops?.let { JSONObject(it.toString()).put("failed", JSONArray().put(op)) }
+            }
+            opsPending = false
         }
     }
     LaunchedEffect(key, kind, monitor.running) {
         state = controller.appAccess(key, readAction)
         pending = false
-        if (kind == AccessKind.PERMISSIONS) {
-            clip = controller.appAccess(key, "clipboard")
-            clipPending = false
-        }
+        if (kind == AccessKind.PERMISSIONS) readOps(state)
     }
     val lock = state?.optString("lock").orEmpty()
     val groups = remember(context) {
@@ -129,7 +155,8 @@ fun AppAccessScreen(controller: MonitorController, labels: AppLabels, key: AppKe
                 "health", "microphone" -> JiumiIcons.Activity
                 else -> JiumiIcons.Lock
             }
-            PermissionRow(name, label, group, icon, item.takeUnless { it.isNull("allowed") }?.optBoolean("allowed"), editable)
+            PermissionRow(name, label, group, icon, item.takeUnless { it.isNull("allowed") }?.optBoolean("allowed"), editable,
+                item.optBoolean("role"))
         }
     }
     val enabled = rows.filter { it.editable && it.allowed == true }
@@ -196,7 +223,7 @@ fun AppAccessScreen(controller: MonitorController, labels: AppLabels, key: AppKe
                     GroupFooter(stringResource(R.string.access_partial_result, state?.optInt("changed") ?: 0, failedNames.size), warning = true)
                 }
             }
-            ClipboardGroup(clip, clipPending, ::changeClipboard)
+            OpsGroup(ops, opRules, opsPending, ::changeOp)
             if (rows.isEmpty()) GroupFooter(stringResource(R.string.access_no_permissions))
             rows.sortedWith(compareBy({ !it.editable }, { it.group }, { it.label })).groupBy { it.editable to it.group }
                 .forEach { (group, items) ->
@@ -206,11 +233,14 @@ fun AppAccessScreen(controller: MonitorController, labels: AppLabels, key: AppKe
                             if (index > 0) InsetDivider()
                             val allowed = row.allowed
                             val action = if (allowed == true) "deny" else "allow"
+                            val failedRow = row.name in failedNames
                             ListRow(row.label,
-                                subtitle = if (row.name in failedNames) stringResource(
-                                    if (allowed == true) R.string.access_deny_failed else R.string.access_allow_failed
-                                ) else null,
-                                subtitleColor = StatusWarning,
+                                subtitle = when {
+                                    failedRow -> stringResource(if (allowed == true) R.string.access_deny_failed else R.string.access_allow_failed)
+                                    row.role -> stringResource(R.string.access_granted_by_role)
+                                    else -> null
+                                },
+                                subtitleColor = if (failedRow) StatusWarning else MaterialTheme.colorScheme.onSurfaceVariant,
                                 leading = { IconTile(row.icon) },
                                 onClick = if (row.editable && !pending) ({ refresh(action, row.name) }) else null
                             ) {
@@ -241,43 +271,65 @@ fun AppAccessScreen(controller: MonitorController, labels: AppLabels, key: AppKe
             }))
             switchFailed -> Feedback(stringResource(R.string.access_rule_failed)) { refresh(lastAction.first) }
         }
-        if (!pending && lock == "shared") {
-            val peers = state?.optJSONArray("peers")
-            if (peers != null && peers.length() > 0) {
-                GroupFooter(List(peers.length(), peers::getString).joinToString(stringResource(R.string.list_separator)))
+        val peers = state?.optJSONArray("peers")?.let { a -> List(a.length(), a::getString) }.orEmpty()
+            .joinToString(stringResource(R.string.list_separator))
+        if (!pending && lock == "shared" && peers.isNotEmpty()) GroupFooter(peers)
+        // What expert mode let through: said plainly, since the change reaches past this app.
+        val warn = state?.optJSONArray("warn")?.let { a -> List(a.length(), a::getString) }.orEmpty()
+        if (!pending && lock.isEmpty()) warn.forEach { w ->
+            when (w) {
+                "shared" -> GroupFooter(stringResource(R.string.access_warn_shared, peers), warning = true)
+                "users" -> GroupFooter(stringResource(R.string.access_warn_users), warning = true)
+                "external" -> GroupFooter(stringResource(R.string.access_warn_external), warning = true)
+                "chain" -> GroupFooter(stringResource(R.string.access_warn_chain), warning = true)
             }
         }
     }
 }
 
 /**
- * Clipboard reads as their own group among the permissions: a switch when the monitor can change them,
- * the state alone when the app is protected, nothing when the state could not be read.
+ * The app ops this app can use, one switch each: off sets it to ignore, on puts back the mode it had.
+ * Each row says the mode Android reports; an app the monitor may not change shows the state alone.
  */
 @Composable
-private fun ClipboardGroup(clip: JSONObject?, pending: Boolean, onChange: (Boolean) -> Unit) {
-    if (clip?.has("allowed") != true) return
-    val allowed = clip.optBoolean("allowed")
-    val editable = clip.optString("lock").isEmpty()
-    val failed = clip.optBoolean("failed")
-    GroupTitle(stringResource(R.string.access_clipboard), Modifier.padding(top = 16.dp))
+private fun OpsGroup(ops: JSONObject?, rules: List<OpRule>, pending: Boolean, onChange: (String, Boolean) -> Unit) {
+    val context = LocalContext.current
+    val rows = ops?.optJSONArray("ops") ?: return
+    if (rows.length() == 0) return
+    val editable = ops.optString("lock").isEmpty()
+    val failed = ops.optJSONArray("failed")?.let { a -> List(a.length(), a::getString) }.orEmpty()
+    val byOp = rules.associateBy { it.op }
+    GroupTitle(stringResource(R.string.access_group_ops), Modifier.padding(top = 16.dp))
     Card {
-        ListRow(
-            stringResource(R.string.access_clipboard_allow),
-            subtitle = stringResource(when {
-                failed && !pending -> if (allowed) R.string.access_deny_failed else R.string.access_allow_failed
-                allowed -> R.string.access_clipboard_allowed
-                else -> R.string.access_clipboard_denied
-            }),
-            subtitleColor = if (failed && !pending) StatusWarning else MaterialTheme.colorScheme.onSurfaceVariant,
-            leading = { IconTile(JiumiIcons.Clipboard) },
-            onClick = if (editable && !pending) ({ onChange(!allowed) }) else null
-        ) {
-            if (editable) JiumiSwitch(allowed, enabled = !pending) { onChange(it) }
-            else TrailingValue(stringResource(if (allowed) R.string.access_fixed_allowed else R.string.access_fixed_denied))
+        for (i in 0 until rows.length()) {
+            val row = rows.getJSONObject(i)
+            val op = row.getString("op")
+            val rule = byOp[op] ?: continue
+            val allowed = row.optBoolean("allowed")
+            val mode = row.optString("mode")
+            @Suppress("DiscouragedApi")
+            val labelId = context.resources.getIdentifier("appop_${rule.label}", "string", context.packageName)
+            if (i > 0) InsetDivider()
+            val failedRow = op in failed && !pending
+            ListRow(
+                if (labelId != 0) stringResource(labelId) else op,
+                subtitle = when {
+                    failedRow -> stringResource(if (allowed) R.string.access_deny_failed else R.string.access_allow_failed)
+                    !allowed -> stringResource(R.string.appop_mode_denied)
+                    mode == "allow" -> stringResource(R.string.appop_mode_allow)
+                    mode == "foreground" -> stringResource(R.string.appop_mode_foreground)
+                    else -> stringResource(R.string.appop_mode_default)
+                },
+                subtitleColor = if (failedRow) StatusWarning else MaterialTheme.colorScheme.onSurfaceVariant,
+                leading = { IconTile(groupIcon(rule.icon)) },
+                onClick = if (editable && !pending) ({ onChange(op, !allowed) }) else null
+            ) {
+                if (editable) JiumiSwitch(allowed, enabled = !pending) { onChange(op, it) }
+                else TrailingValue(stringResource(if (allowed) R.string.access_fixed_allowed else R.string.access_fixed_denied))
+            }
         }
     }
-    if (editable) GroupFooter(stringResource(R.string.access_clipboard_note))
+    if (editable) GroupFooter(stringResource(R.string.access_ops_note))
 }
 
 @Composable

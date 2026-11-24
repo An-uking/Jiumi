@@ -470,7 +470,11 @@ private fun ManageBar(controller: MonitorController, m: MonitorController.Manage
         val note = when {
             working -> stringResource(if (monitorRunning) R.string.manage_working else R.string.manage_starting_monitor)
             failureTitle != null -> null
-            m.refusal != null && m.expertUnlocks -> stringResource(R.string.refusal_platform_expert)
+            m.refusal != null && m.expertUnlocks -> when (m.refusal.reason) {
+                Refusal.Reason.PROTECTED -> stringResource(R.string.refusal_protected_expert)
+                Refusal.Reason.ROLE -> stringResource(R.string.refusal_role_expert, roleName(m.refusal.role))
+                else -> stringResource(R.string.refusal_platform_expert)
+            }
             m.refusal != null -> refusalText(m.refusal)
             outcome == null && m.risk != null && m.actions.any { !Management.isUndo(it) } -> stringResource(R.string.risk_note)
             else -> null
@@ -707,6 +711,8 @@ private fun RiskWarning(risk: Risk, modifier: Modifier = Modifier) {
                 Risk.CORE -> R.string.risk_core
                 Risk.LISTED -> R.string.risk_listed
                 Risk.BACKGROUND -> R.string.risk_background
+                Risk.PROTECTED -> R.string.risk_protected
+                Risk.ROLE -> R.string.risk_role
             })),
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 2.dp))
@@ -719,10 +725,14 @@ private fun refusalText(r: Refusal): String = when (r.reason) {
     Refusal.Reason.SELF -> stringResource(R.string.refusal_self)
     Refusal.Reason.PLATFORM -> stringResource(R.string.refusal_platform)
     Refusal.Reason.PROTECTED -> stringResource(R.string.refusal_protected)
-    Refusal.Reason.ROLE -> stringResource(R.string.refusal_role, stringResource(when (r.role) {
-        "home" -> R.string.role_home
-        "keyboard" -> R.string.role_keyboard
-        "sms" -> R.string.role_sms
-        else -> R.string.role_dialer
-    }))
+    Refusal.Reason.ROLE -> if (r.role == "keyboard") stringResource(R.string.refusal_keyboard)
+        else stringResource(R.string.refusal_role, roleName(r.role))
 }
+
+@Composable
+private fun roleName(role: String?): String = stringResource(when (role) {
+    "home" -> R.string.role_home
+    "keyboard" -> R.string.role_keyboard
+    "sms" -> R.string.role_sms
+    else -> R.string.role_dialer
+})

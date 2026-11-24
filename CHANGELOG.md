@@ -4,14 +4,13 @@ Notable changes to Jiumi, newest first. The English in-app update notes come fro
 Chinese in-app notes are supplied when preparing the release.
 Versions follow [Semantic Versioning](https://semver.org).
 
-## [Unreleased]
+## [0.6.0] - 2026-11-24
 
-- **Hide Jiumi from recent apps.** Turn on Hide task card in Settings → Advanced to avoid swiping Jiumi away by accident.
-- **System switches in Permissions.** Block clipboard reads, background activity and other supported operations. Turn a switch back on to restore the setting Jiumi saved for that app.
-- **Expanded Expert mode.** Manage more default and system apps and change eligible role-granted and shared-UID permissions. Jiumi warns about wider effects. Jiumi, essential system components, persistent apps and the active keyboard keep their disable and uninstall protections.
-- Tap a package name to copy it. Network blocking requires Android 14 or later and clears on restart.
-- Fix a crash when the monitor reads location providers on Android 17.
-- Fix Wireless debugging pairing stalls. Monitoring resumes when Wi-Fi and Wireless debugging return with valid pairing.
+- **Hide Jiumi from recent apps.** Turn on **Hide task card** in **Settings → Advanced** to avoid swiping Jiumi away by accident. You can still open it from your home screen.
+- **New system switches in Permissions.** Limit supported operations such as clipboard reads and background activity. Re-enabling a switch restores the setting Jiumi saved for that app. Tap a package name to copy it.
+- **Expanded Expert mode.** Manage more default and system apps and change eligible role-granted or shared-UID permissions. Jiumi warns about wider effects and now reads shared-UID permission states more accurately.
+- **Fixed Wireless debugging pairing stalls.** An unfinished monitoring session resumes when Wi-Fi and Wireless debugging return and the existing pairing is still valid.
+- **Fixed an Android 17 monitoring crash** when reading location providers. Per-app network blocking requires Android 14 or later, and Android clears its rules on restart.
 
 ## [0.5.0] - 2026-11-23
 

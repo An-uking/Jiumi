@@ -12,7 +12,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 
-/** Uses Android's own permission and UID firewall rules. All writes share one lock. */
+/** Uses Android's own permission, app-op and UID firewall rules. All writes share one lock. */
 internal class AppAccess(context: Context, directory: File, private val self: String) {
     private val pm = context.packageManager
     private val ledger = AtomicFile(File(directory, "app-access.json"))
@@ -29,8 +29,11 @@ internal class AppAccess(context: Context, directory: File, private val self: St
         require(permission.isEmpty() || permissionName.matches(permission))
         val target = target(pkg, uid, user) ?: return JSONObject().put("lock", "unknown")
         val saved = if (ledger.baseFile.exists()) JSONObject(ledger.readFully().decodeToString()) else JSONObject()
-        val result = if (action.startsWith("network")) network(target, saved, action) else
-            permissions(target, saved, action, permission)
+        val result = when {
+            action.startsWith("network") -> network(target, saved, action)
+            action.startsWith("clipboard") -> clipboard(target, action)
+            else -> permissions(target, saved, action, permission)
+        }
         result.put("peers", JSONArray(target.peers))
     }.getOrElse { JSONObject().put("lock", "unknown") }
 
@@ -213,6 +216,39 @@ internal class AppAccess(context: Context, directory: File, private val self: St
             .put("failed", error || action != "network" && lock != null)
     }
 
+    /**
+     * Whether [t] may read the clipboard: Android's READ_CLIPBOARD app op, for this package (or its
+     * whole UID, when something set that) and this user. Null when the system did not answer clearly.
+     */
+    private fun clipboardAllowed(t: Target): Boolean? {
+        return clipboardAllowed(command("appops", "get", "--user", "${t.user}", t.pkg, CLIPBOARD_OP) ?: return null)
+    }
+
+    /**
+     * Denying sets the package's mode to ignore, so reads get an empty clipboard rather than an error;
+     * allowing puts it back to the system default, and also lifts a UID-wide denial that stays after.
+     * Each change is read back. The app op is per package, so a shared UID does not lock it.
+     */
+    private fun clipboard(t: Target, action: String): JSONObject {
+        val lock = t.lock?.takeIf { it != "shared" }
+        val before = clipboardAllowed(t) ?: return JSONObject().put("lock", lock ?: "unknown")
+        var failed = false
+        if (action != "clipboard" && lock == null) {
+            if (target(t.pkg, t.uid, t.user) != t) return JSONObject().put("lock", "unknown")
+            val allow = action == "clipboardAllow"
+            if (before != allow) {
+                command("appops", "set", "--user", "${t.user}", t.pkg, CLIPBOARD_OP, if (allow) "default" else "ignore")
+                if (allow && clipboardAllowed(t) == false) {
+                    command("appops", "set", "--user", "${t.user}", "--uid", t.pkg, CLIPBOARD_OP, "default")
+                }
+            }
+            failed = clipboardAllowed(t) != allow
+        }
+        val current = clipboardAllowed(t) ?: return JSONObject().put("lock", "unknown")
+        return JSONObject().put("lock", lock).put("allowed", current)
+            .put("failed", failed || action != "clipboard" && lock != null)
+    }
+
     private fun write(saved: JSONObject) {
         val output = ledger.startWrite()
         try {
@@ -224,14 +260,29 @@ internal class AppAccess(context: Context, directory: File, private val self: St
         }
     }
 
-    private companion object {
-        const val USER_RANGE = 100_000
-        val actions = setOf("permissions", "allow", "deny", "denyAll", "restoreAll", "network", "networkAllow", "networkDeny")
-        val packageRow = Regex("""package:([A-Za-z0-9_.]+)\s+uid:(\d+)""")
-        val userRow = Regex("""^\s*User \d+:""")
-        val userList = Regex("""UserInfo\{(\d+):[^}]*\}(?:\s+running)?""")
-        val permissionName = Regex("""[A-Za-z0-9_.]+""")
-        val grantRow = Regex("""([A-Za-z0-9_.]+): granted=(true|false)(?:, flags=\[(.*)])?""")
-        val firewallRow = Regex("""(\d+) ((?:[A-Z0-9_]+_MATCH)(?: [A-Z0-9_]+_MATCH)*)""")
+    internal companion object {
+        /**
+         * Reads `appops get <pkg> READ_CLIPBOARD`: denied when the package's or the UID's mode is ignore,
+         * deny or errored; "No operations." means the system default, which allows. Null otherwise.
+         */
+        fun clipboardAllowed(output: String): Boolean? {
+            val lines = output.lines().map(String::trim)
+            val modes = lines.mapNotNull { clipboardRow.matchEntire(it)?.groupValues?.get(1) }
+            if (modes.isEmpty()) return if ("No operations." in lines) true else null
+            return modes.none { it in deniedModes }
+        }
+
+        private const val USER_RANGE = 100_000
+        private val actions = setOf("permissions", "allow", "deny", "denyAll", "restoreAll", "network", "networkAllow", "networkDeny",
+            "clipboard", "clipboardAllow", "clipboardDeny")
+        private const val CLIPBOARD_OP = "READ_CLIPBOARD"
+        private val clipboardRow = Regex("""(?:Uid mode: )?READ_CLIPBOARD: ([a-z]+)\b.*""")
+        private val deniedModes = setOf("ignore", "deny", "errored")
+        private val packageRow = Regex("""package:([A-Za-z0-9_.]+)\s+uid:(\d+)""")
+        private val userRow = Regex("""^\s*User \d+:""")
+        private val userList = Regex("""UserInfo\{(\d+):[^}]*\}(?:\s+running)?""")
+        private val permissionName = Regex("""[A-Za-z0-9_.]+""")
+        private val grantRow = Regex("""([A-Za-z0-9_.]+): granted=(true|false)(?:, flags=\[(.*)])?""")
+        private val firewallRow = Regex("""(\d+) ((?:[A-Z0-9_]+_MATCH)(?: [A-Z0-9_]+_MATCH)*)""")
     }
 }

@@ -185,14 +185,16 @@ class MainActivity : AppCompatActivity() {
                         val (uid, pkg) = top.removePrefix("app:").split('|', limit = 2)
                         AppDetailScreen(controller, labels, AppKey(uid.toInt(), pkg.ifEmpty { null }), onBack = pop, onOpenLog = openLog,
                             onOpenAppManagement = { push("settings:${SettingsSection.MANAGEMENT.name}") },
-                            onOpenAccess = { network -> push("access:${if (network) "network" else "permissions"}|${uid}|${pkg}") })
+                            onOpenAccess = { kind -> push("access:${kind.name}|${uid}|${pkg}") })
                     }
                     top.startsWith("apex:") ->
                         SystemModuleScreen(controller, labels, top.removePrefix("apex:"), onBack = pop, onOpenApp = openApp)
                     top.startsWith("access:") -> {
                         val (mode, uid, pkg) = top.removePrefix("access:").split('|', limit = 3)
                         com.ybblab.jiumi.ui.AppAccessScreen(
-                            controller, labels, AppKey(uid.toInt(), pkg), network = mode == "network", onBack = pop
+                            controller, labels, AppKey(uid.toInt(), pkg),
+                            com.ybblab.jiumi.ui.AccessKind.entries.firstOrNull { it.name == mode } ?: com.ybblab.jiumi.ui.AccessKind.PERMISSIONS,
+                            onBack = pop
                         )
                     }
                     top.startsWith("log:") -> {

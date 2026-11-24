@@ -88,7 +88,7 @@ fun AppDetailScreen(
     onBack: () -> Unit,
     onOpenLog: (LogEntry) -> Unit,
     onOpenAppManagement: () -> Unit,
-    onOpenAccess: (Boolean) -> Unit
+    onOpenAccess: (AccessKind) -> Unit
 ) {
     val state by controller.state.collectAsStateWithLifecycle()
     // Reload when the range changes or a sync rebuilt the report.
@@ -168,9 +168,11 @@ fun AppDetailScreen(
                     Text(name, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold,
                         color = if (badge != null) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onBackground,
                         maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    Text(listOfNotNull(summary?.let { kindName(it.kind) }, key.pkg ?: "UID ${key.uid}").joinToString(" · "),
+                    val pkg = key.pkg
+                    Text(listOfNotNull(summary?.let { kindName(it.kind) }, pkg ?: "UID ${key.uid}").joinToString(" · "),
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        modifier = if (pkg != null) Modifier.copyOnClick(pkg) else Modifier)
                     // Where it came from: the store by name, installed directly, or part of the phone.
                     facts?.let { f ->
                         val source = when (Management.source(f)) {
@@ -199,10 +201,13 @@ fun AppDetailScreen(
                 Spacer(Modifier.height(16.dp))
                 Card {
                     ListRow(stringResource(R.string.access_permissions), leading = { IconTile(JiumiIcons.Lock) },
-                        onClick = { onOpenAccess(false) }) { Chevron() }
+                        onClick = { onOpenAccess(AccessKind.PERMISSIONS) }) { Chevron() }
                     InsetDivider()
                     ListRow(stringResource(R.string.access_network), leading = { IconTile(JiumiIcons.Network) },
-                        onClick = { onOpenAccess(true) }) { Chevron() }
+                        onClick = { onOpenAccess(AccessKind.NETWORK) }) { Chevron() }
+                    InsetDivider()
+                    ListRow(stringResource(R.string.access_clipboard), leading = { IconTile(JiumiIcons.Clipboard) },
+                        onClick = { onOpenAccess(AccessKind.CLIPBOARD) }) { Chevron() }
                 }
             }
         }

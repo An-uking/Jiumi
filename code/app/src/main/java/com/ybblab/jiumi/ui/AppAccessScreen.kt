@@ -49,15 +49,19 @@ private data class PermissionRow(
     val allowed: Boolean?, val editable: Boolean
 )
 
+/** What one access page manages: the app's runtime permissions, or a single switch for network or clipboard. */
+enum class AccessKind(val read: String) { PERMISSIONS("permissions"), NETWORK("network"), CLIPBOARD("clipboard") }
+
 @Composable
-fun AppAccessScreen(controller: MonitorController, labels: AppLabels, key: AppKey, network: Boolean, onBack: () -> Unit) {
+fun AppAccessScreen(controller: MonitorController, labels: AppLabels, key: AppKey, kind: AccessKind, onBack: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val monitor by controller.state.collectAsStateWithLifecycle()
-    val readAction = if (network) "network" else "permissions"
-    var state by remember(key, network) { mutableStateOf<JSONObject?>(null) }
-    var pending by remember(key, network) { mutableStateOf(true) }
-    var lastAction by remember(key, network) { mutableStateOf(readAction to "") }
+    val single = kind != AccessKind.PERMISSIONS
+    val readAction = kind.read
+    var state by remember(key, kind) { mutableStateOf<JSONObject?>(null) }
+    var pending by remember(key, kind) { mutableStateOf(true) }
+    var lastAction by remember(key, kind) { mutableStateOf(readAction to "") }
     fun refresh(action: String, permission: String = "") {
         if (pending) return
         pending = true
@@ -67,7 +71,7 @@ fun AppAccessScreen(controller: MonitorController, labels: AppLabels, key: AppKe
             pending = false
         }
     }
-    LaunchedEffect(key, network, monitor.running) {
+    LaunchedEffect(key, kind, monitor.running) {
         state = controller.appAccess(key, readAction)
         pending = false
     }
@@ -118,7 +122,7 @@ fun AppAccessScreen(controller: MonitorController, labels: AppLabels, key: AppKe
     val canRestore = state?.optBoolean("restore") == true
     val permissionFailures = state?.optJSONArray("failed")
     val failedNames = permissionFailures?.let { array -> List(array.length()) { array.getString(it) } }.orEmpty()
-    val networkFailed = network && state?.optBoolean("failed") == true
+    val switchFailed = single && state?.optBoolean("failed") == true
 
     Column(
         Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
@@ -129,29 +133,40 @@ fun AppAccessScreen(controller: MonitorController, labels: AppLabels, key: AppKe
             Icon(JiumiIcons.ArrowBack, stringResource(R.string.action_back), tint = Ink.primary)
         }
         Column(Modifier.padding(horizontal = 4.dp)) {
-            Text(stringResource(if (network) R.string.access_network else R.string.access_permissions),
-                style = MaterialTheme.typography.headlineSmall, color = Ink.primary)
+            Text(stringResource(when (kind) {
+                AccessKind.PERMISSIONS -> R.string.access_permissions
+                AccessKind.NETWORK -> R.string.access_network
+                AccessKind.CLIPBOARD -> R.string.access_clipboard
+            }), style = MaterialTheme.typography.headlineSmall, color = Ink.primary)
             Text(labels.label(key), Modifier.padding(top = 4.dp), style = MaterialTheme.typography.bodyMedium, color = Ink.primary)
-            Text(key.pkg.orEmpty(), style = MaterialTheme.typography.bodySmall, color = Ink.secondary)
+            key.pkg?.let { pkg ->
+                Text(pkg, Modifier.copyOnClick(pkg), style = MaterialTheme.typography.bodySmall, color = Ink.secondary)
+            }
         }
         Spacer(Modifier.height(20.dp))
-        val readable = state != null && (state?.has(if (network) "allowed" else "rows") == true)
+        val readable = state != null && (state?.has(if (single) "allowed" else "rows") == true)
         if (lock.isEmpty() && readable) GroupTitle(stringResource(R.string.access_scope))
-        if (network && (readable || lock.isNotEmpty() && lock != "unknown" && lock != "monitor")) {
+        if (single && (readable || lock.isNotEmpty() && lock != "unknown" && lock != "monitor")) {
             val allowed = state?.optBoolean("allowed") == true
+            val clipboard = kind == AccessKind.CLIPBOARD
             Card {
                 ListRow(
-                    stringResource(R.string.access_network_allow),
-                    subtitle = if (lock.isEmpty()) stringResource(if (allowed) R.string.access_not_blocked else R.string.access_blocked) else null,
-                    leading = { IconTile(JiumiIcons.Network) },
-                    onClick = if (!pending && lock.isEmpty()) ({ refresh(if (allowed) "networkDeny" else "networkAllow") }) else null
+                    stringResource(if (clipboard) R.string.access_clipboard_allow else R.string.access_network_allow),
+                    subtitle = if (lock.isEmpty()) stringResource(when {
+                        clipboard -> if (allowed) R.string.access_clipboard_allowed else R.string.access_clipboard_denied
+                        allowed -> R.string.access_not_blocked
+                        else -> R.string.access_blocked
+                    }) else null,
+                    leading = { IconTile(if (clipboard) JiumiIcons.Clipboard else JiumiIcons.Network) },
+                    onClick = if (!pending && lock.isEmpty()) ({ refresh(readAction + if (allowed) "Deny" else "Allow") }) else null
                 ) {
                     if (lock.isEmpty()) JiumiSwitch(allowed, enabled = !pending) {
-                        refresh(if (it) "networkAllow" else "networkDeny")
+                        refresh(readAction + if (it) "Allow" else "Deny")
                     } else TrailingValue(stringResource(R.string.access_read_only))
                 }
             }
-        } else if (!network && readable) {
+            if (lock.isEmpty()) GroupFooter(stringResource(if (clipboard) R.string.access_clipboard_note else R.string.access_network_note))
+        } else if (!single && readable) {
             if (editable.isNotEmpty()) {
                 Card {
                     ListRow(
@@ -213,10 +228,16 @@ fun AppAccessScreen(controller: MonitorController, labels: AppLabels, key: AppKe
                 "external" -> R.string.access_lock_external
                 "chain" -> R.string.access_lock_chain
                 "unsupported" -> R.string.access_lock_unsupported
-                "monitor" -> if (network) R.string.access_lock_monitor_network else R.string.access_lock_monitor_permissions
+                "monitor" -> when (kind) {
+                    AccessKind.NETWORK -> R.string.access_lock_monitor_network
+                    AccessKind.CLIPBOARD -> R.string.access_lock_monitor_clipboard
+                    AccessKind.PERMISSIONS -> R.string.access_lock_monitor_permissions
+                }
                 else -> R.string.access_unknown
             }))
-            networkFailed -> Feedback(stringResource(R.string.access_rule_failed)) { refresh(lastAction.first) }
+            switchFailed -> Feedback(stringResource(
+                if (kind == AccessKind.CLIPBOARD) R.string.access_clipboard_failed else R.string.access_rule_failed
+            )) { refresh(lastAction.first) }
         }
         if (!pending && lock == "shared") {
             val peers = state?.optJSONArray("peers")

@@ -792,8 +792,6 @@
     <string name="access_clipboard_allowed">Allowed by Android’s default</string>
     <string name="access_clipboard_denied">Denied. Reads return an empty clipboard</string>
     <string name="access_clipboard_note">Android’s clipboard app op for this app only. It stays after a restart. Android already blocks clipboard reads by apps in the background, so this mainly stops reads while the app is in front.</string>
-    <string name="access_clipboard_failed">Change failed. The clipboard setting did not take effect.</string>
-    <string name="access_lock_monitor_clipboard">Start monitoring from the Monitor tab to change clipboard access.</string>
     <string name="access_network_note">Android’s own firewall rule for this app, on Android 14 and later. Android clears it when the phone restarts.</string>
     <string name="action_copy">Copy</string>
     <string name="copied_package">Package name copied</string>

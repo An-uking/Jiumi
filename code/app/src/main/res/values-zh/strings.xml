@@ -783,8 +783,6 @@
     <string name="access_clipboard_allowed">按系统默认允许</string>
     <string name="access_clipboard_denied">已拒绝，读取时只会拿到空剪贴板</string>
     <string name="access_clipboard_note">只改这个应用在 Android 中的剪贴板 AppOps 设置，重启后仍然有效。系统本来就不让后台应用读剪贴板，所以这里主要拦它在前台时的读取。</string>
-    <string name="access_clipboard_failed">更改失败，剪贴板设置未生效。</string>
-    <string name="access_lock_monitor_clipboard">请在「监测」页启动监测后更改此应用的剪贴板权限。</string>
     <string name="access_network_note">使用 Android 14 及以上系统自带的防火墙规则，只作用于这个应用。手机重启后系统会清除这条规则。</string>
     <string name="action_copy">复制</string>
     <string name="copied_package">已复制包名</string>

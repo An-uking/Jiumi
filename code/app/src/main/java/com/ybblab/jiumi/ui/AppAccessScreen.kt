@@ -49,8 +49,8 @@ private data class PermissionRow(
     val allowed: Boolean?, val editable: Boolean
 )
 
-/** What one access page manages: the app's runtime permissions, or a single switch for network or clipboard. */
-enum class AccessKind(val read: String) { PERMISSIONS("permissions"), NETWORK("network"), CLIPBOARD("clipboard") }
+/** What one access page manages: the app's permissions (clipboard reads included), or its network access. */
+enum class AccessKind(val read: String) { PERMISSIONS("permissions"), NETWORK("network") }
 
 @Composable
 fun AppAccessScreen(controller: MonitorController, labels: AppLabels, key: AppKey, kind: AccessKind, onBack: () -> Unit) {
@@ -71,9 +71,24 @@ fun AppAccessScreen(controller: MonitorController, labels: AppLabels, key: AppKe
             pending = false
         }
     }
+    // Clipboard reads are an app op rather than a permission, so they are read and changed on their own.
+    var clip by remember(key, kind) { mutableStateOf<JSONObject?>(null) }
+    var clipPending by remember(key, kind) { mutableStateOf(kind == AccessKind.PERMISSIONS) }
+    fun changeClipboard(allow: Boolean) {
+        if (clipPending) return
+        clipPending = true
+        scope.launch {
+            clip = controller.appAccess(key, if (allow) "clipboardAllow" else "clipboardDeny")
+            clipPending = false
+        }
+    }
     LaunchedEffect(key, kind, monitor.running) {
         state = controller.appAccess(key, readAction)
         pending = false
+        if (kind == AccessKind.PERMISSIONS) {
+            clip = controller.appAccess(key, "clipboard")
+            clipPending = false
+        }
     }
     val lock = state?.optString("lock").orEmpty()
     val groups = remember(context) {
@@ -133,11 +148,8 @@ fun AppAccessScreen(controller: MonitorController, labels: AppLabels, key: AppKe
             Icon(JiumiIcons.ArrowBack, stringResource(R.string.action_back), tint = Ink.primary)
         }
         Column(Modifier.padding(horizontal = 4.dp)) {
-            Text(stringResource(when (kind) {
-                AccessKind.PERMISSIONS -> R.string.access_permissions
-                AccessKind.NETWORK -> R.string.access_network
-                AccessKind.CLIPBOARD -> R.string.access_clipboard
-            }), style = MaterialTheme.typography.headlineSmall, color = Ink.primary)
+            Text(stringResource(if (single) R.string.access_network else R.string.access_permissions),
+                style = MaterialTheme.typography.headlineSmall, color = Ink.primary)
             Text(labels.label(key), Modifier.padding(top = 4.dp), style = MaterialTheme.typography.bodyMedium, color = Ink.primary)
             key.pkg?.let { pkg ->
                 Text(pkg, Modifier.copyOnClick(pkg), style = MaterialTheme.typography.bodySmall, color = Ink.secondary)
@@ -148,24 +160,19 @@ fun AppAccessScreen(controller: MonitorController, labels: AppLabels, key: AppKe
         if (lock.isEmpty() && readable) GroupTitle(stringResource(R.string.access_scope))
         if (single && (readable || lock.isNotEmpty() && lock != "unknown" && lock != "monitor")) {
             val allowed = state?.optBoolean("allowed") == true
-            val clipboard = kind == AccessKind.CLIPBOARD
             Card {
                 ListRow(
-                    stringResource(if (clipboard) R.string.access_clipboard_allow else R.string.access_network_allow),
-                    subtitle = if (lock.isEmpty()) stringResource(when {
-                        clipboard -> if (allowed) R.string.access_clipboard_allowed else R.string.access_clipboard_denied
-                        allowed -> R.string.access_not_blocked
-                        else -> R.string.access_blocked
-                    }) else null,
-                    leading = { IconTile(if (clipboard) JiumiIcons.Clipboard else JiumiIcons.Network) },
-                    onClick = if (!pending && lock.isEmpty()) ({ refresh(readAction + if (allowed) "Deny" else "Allow") }) else null
+                    stringResource(R.string.access_network_allow),
+                    subtitle = if (lock.isEmpty()) stringResource(if (allowed) R.string.access_not_blocked else R.string.access_blocked) else null,
+                    leading = { IconTile(JiumiIcons.Network) },
+                    onClick = if (!pending && lock.isEmpty()) ({ refresh(if (allowed) "networkDeny" else "networkAllow") }) else null
                 ) {
                     if (lock.isEmpty()) JiumiSwitch(allowed, enabled = !pending) {
-                        refresh(readAction + if (it) "Allow" else "Deny")
+                        refresh(if (it) "networkAllow" else "networkDeny")
                     } else TrailingValue(stringResource(R.string.access_read_only))
                 }
             }
-            if (lock.isEmpty()) GroupFooter(stringResource(if (clipboard) R.string.access_clipboard_note else R.string.access_network_note))
+            if (lock.isEmpty()) GroupFooter(stringResource(R.string.access_network_note))
         } else if (!single && readable) {
             if (editable.isNotEmpty()) {
                 Card {
@@ -189,6 +196,7 @@ fun AppAccessScreen(controller: MonitorController, labels: AppLabels, key: AppKe
                     GroupFooter(stringResource(R.string.access_partial_result, state?.optInt("changed") ?: 0, failedNames.size), warning = true)
                 }
             }
+            ClipboardGroup(clip, clipPending, ::changeClipboard)
             if (rows.isEmpty()) GroupFooter(stringResource(R.string.access_no_permissions))
             rows.sortedWith(compareBy({ !it.editable }, { it.group }, { it.label })).groupBy { it.editable to it.group }
                 .forEach { (group, items) ->
@@ -228,16 +236,10 @@ fun AppAccessScreen(controller: MonitorController, labels: AppLabels, key: AppKe
                 "external" -> R.string.access_lock_external
                 "chain" -> R.string.access_lock_chain
                 "unsupported" -> R.string.access_lock_unsupported
-                "monitor" -> when (kind) {
-                    AccessKind.NETWORK -> R.string.access_lock_monitor_network
-                    AccessKind.CLIPBOARD -> R.string.access_lock_monitor_clipboard
-                    AccessKind.PERMISSIONS -> R.string.access_lock_monitor_permissions
-                }
+                "monitor" -> if (single) R.string.access_lock_monitor_network else R.string.access_lock_monitor_permissions
                 else -> R.string.access_unknown
             }))
-            switchFailed -> Feedback(stringResource(
-                if (kind == AccessKind.CLIPBOARD) R.string.access_clipboard_failed else R.string.access_rule_failed
-            )) { refresh(lastAction.first) }
+            switchFailed -> Feedback(stringResource(R.string.access_rule_failed)) { refresh(lastAction.first) }
         }
         if (!pending && lock == "shared") {
             val peers = state?.optJSONArray("peers")
@@ -246,6 +248,36 @@ fun AppAccessScreen(controller: MonitorController, labels: AppLabels, key: AppKe
             }
         }
     }
+}
+
+/**
+ * Clipboard reads as their own group among the permissions: a switch when the monitor can change them,
+ * the state alone when the app is protected, nothing when the state could not be read.
+ */
+@Composable
+private fun ClipboardGroup(clip: JSONObject?, pending: Boolean, onChange: (Boolean) -> Unit) {
+    if (clip?.has("allowed") != true) return
+    val allowed = clip.optBoolean("allowed")
+    val editable = clip.optString("lock").isEmpty()
+    val failed = clip.optBoolean("failed")
+    GroupTitle(stringResource(R.string.access_clipboard), Modifier.padding(top = 16.dp))
+    Card {
+        ListRow(
+            stringResource(R.string.access_clipboard_allow),
+            subtitle = stringResource(when {
+                failed && !pending -> if (allowed) R.string.access_deny_failed else R.string.access_allow_failed
+                allowed -> R.string.access_clipboard_allowed
+                else -> R.string.access_clipboard_denied
+            }),
+            subtitleColor = if (failed && !pending) StatusWarning else MaterialTheme.colorScheme.onSurfaceVariant,
+            leading = { IconTile(JiumiIcons.Clipboard) },
+            onClick = if (editable && !pending) ({ onChange(!allowed) }) else null
+        ) {
+            if (editable) JiumiSwitch(allowed, enabled = !pending) { onChange(it) }
+            else TrailingValue(stringResource(if (allowed) R.string.access_fixed_allowed else R.string.access_fixed_denied))
+        }
+    }
+    if (editable) GroupFooter(stringResource(R.string.access_clipboard_note))
 }
 
 @Composable

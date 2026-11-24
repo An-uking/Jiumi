@@ -205,9 +205,6 @@ fun AppDetailScreen(
                     InsetDivider()
                     ListRow(stringResource(R.string.access_network), leading = { IconTile(JiumiIcons.Network) },
                         onClick = { onOpenAccess(AccessKind.NETWORK) }) { Chevron() }
-                    InsetDivider()
-                    ListRow(stringResource(R.string.access_clipboard), leading = { IconTile(JiumiIcons.Clipboard) },
-                        onClick = { onOpenAccess(AccessKind.CLIPBOARD) }) { Chevron() }
                 }
             }
         }

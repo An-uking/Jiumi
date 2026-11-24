@@ -6,6 +6,10 @@ Versions follow [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+- **Add System switches to each app's Permissions page.** Control reading the clipboard, running in the background, keeping the phone awake, exact alarms, drawing over other apps, full-screen notifications, installing other apps, changing system settings, all-files access and usage access. Turning one off refuses the app quietly; turning it back on restores the earlier setting.
+- **Expert mode opens up more changes.** Disable or uninstall default home, SMS and phone apps and apps the phone relies on, revoke permissions granted by a system role, and change permissions or network rules that also reach apps sharing a UID, other users or rules set elsewhere. Jiumi explains what else each change affects. Jiumi itself, persistent system apps and the keyboard in use stay locked, so a change can still be undone.
+- Tap a package name to copy it. The Network access page now says it needs Android 14 or later and that Android clears the block on restart.
+- Fix the monitor crashing on Android 17 while reading location providers.
 - Fix Wireless debugging pairing getting stuck after authorization expires or a pairing attempt is canceled.
 - Resume interrupted monitoring automatically when Wi-Fi and Wireless debugging become available again and the existing pairing is still valid.
 - Bound Wireless debugging discovery, release multicast resources when it ends, and recover from a damaged local key during re-pairing.

@@ -61,8 +61,6 @@
     <string name="section_appearance">外观</string>
     <string name="settings_theme">主题</string>
     <string name="settings_language">语言</string>
-    <string name="settings_hide_from_recents">从最近任务中隐藏</string>
-    <string name="settings_hide_from_recents_desc">仍可从桌面打开揪咪。</string>
     <string name="theme_system">跟随系统</string>
     <string name="theme_light">浅色</string>
     <string name="theme_dark">深色</string>
@@ -467,6 +465,9 @@
     <string name="state_suspended">已挂起</string>
     <string name="state_deleted">已卸载</string>
     <string name="section_advanced">高级</string>
+    <string name="settings_advanced_summary">专家模式与任务卡片</string>
+    <string name="settings_hide_from_recents">隐藏任务卡片</string>
+    <string name="settings_hide_from_recents_desc">开启后，揪咪会从系统最近任务中隐藏。</string>
     <string name="settings_manage_identity">执行身份</string>
     <string name="manage_identity_root">Root</string>
     <string name="manage_identity_shell">shell</string>

@@ -63,7 +63,7 @@ internal enum class SettingsSection(
     NOTIFICATIONS(R.string.section_notifications, R.string.settings_notifications_summary, JiumiIcons.Notifications),
     RECORDS(R.string.settings_records, R.string.settings_records_summary, JiumiIcons.Storage),
     MANAGEMENT(R.string.settings_management, R.string.settings_management_summary, JiumiIcons.Shield),
-    ADVANCED(R.string.section_advanced, R.string.settings_expert_mode, JiumiIcons.Cpu)
+    ADVANCED(R.string.section_advanced, R.string.settings_advanced_summary, JiumiIcons.Cpu)
 }
 
 @Composable
@@ -72,14 +72,12 @@ internal fun SettingsScreen(
     onOpenSection: (SettingsSection) -> Unit,
     onOpenTheme: () -> Unit,
     onOpenLanguage: () -> Unit,
-    onHideFromRecentsChange: (Boolean) -> Unit,
     onOpenAbout: () -> Unit
 ) {
     val list = androidx.compose.foundation.lazy.rememberLazyListState()
     val scrolled by remember { androidx.compose.runtime.derivedStateOf { list.canScrollBackward } }
     val update by com.ybblab.jiumi.update.UpdateNotice.available.collectAsStateWithLifecycle()
     val theme by preferences.themeMode.collectAsStateWithLifecycle()
-    val hideFromRecents by preferences.hideFromRecents.collectAsStateWithLifecycle()
     HidingTopBar(stringResource(R.string.settings_title), scrolled) { top ->
         LazyColumn(
             state = list,
@@ -115,15 +113,6 @@ internal fun SettingsScreen(
                         leading = { IconTile(JiumiIcons.Languages) }, onClick = onOpenLanguage) {
                         Chevron()
                     }
-                    InsetDivider()
-                    ListRow(
-                        stringResource(R.string.settings_hide_from_recents),
-                        subtitle = stringResource(R.string.settings_hide_from_recents_desc),
-                        leading = { IconTile(JiumiIcons.Layers) },
-                        onClick = { onHideFromRecentsChange(!hideFromRecents) }
-                    ) {
-                        JiumiSwitch(hideFromRecents, onCheckedChange = onHideFromRecentsChange)
-                    }
                 }
             }
             item {
@@ -151,6 +140,7 @@ private fun SettingsSectionRow(section: SettingsSection, onOpenSection: (Setting
 internal fun SettingsSectionScreen(
     section: SettingsSection,
     controller: MonitorController,
+    preferences: AppPreferences,
     onBack: () -> Unit,
     onOpenSpool: () -> Unit,
     onOpenSessions: () -> Unit,
@@ -158,6 +148,7 @@ internal fun SettingsSectionScreen(
     onOpenPairing: () -> Unit,
     onOpenNetwork: () -> Unit,
     onOpenMonitoringExclusions: () -> Unit,
+    onHideFromRecentsChange: (Boolean) -> Unit,
     onOpenMonitor: () -> Unit
 ) {
     val state by controller.state.collectAsStateWithLifecycle()
@@ -416,6 +407,18 @@ internal fun SettingsSectionScreen(
                 SettingsSection.ADVANCED -> item {
                     Card { ExpertModeRow(state.expertMode, controller::setExpertMode) }
                     GroupFooter(stringResource(R.string.settings_expert_mode_desc))
+                    Spacer(Modifier.height(16.dp))
+                    val hideFromRecents by preferences.hideFromRecents.collectAsStateWithLifecycle()
+                    Card {
+                        ListRow(
+                            stringResource(R.string.settings_hide_from_recents),
+                            subtitle = stringResource(R.string.settings_hide_from_recents_desc),
+                            leading = { IconTile(JiumiIcons.Layers) },
+                            onClick = { onHideFromRecentsChange(!hideFromRecents) }
+                        ) {
+                            JiumiSwitch(hideFromRecents, onCheckedChange = onHideFromRecentsChange)
+                        }
+                    }
                 }
             }
         }

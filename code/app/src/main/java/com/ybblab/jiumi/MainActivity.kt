@@ -178,10 +178,6 @@ class MainActivity : AppCompatActivity() {
                                 onOpenSection = { push("settings:${it.name}") },
                                 onOpenTheme = { push("theme") },
                                 onOpenLanguage = { push("language") },
-                                onHideFromRecentsChange = { hide ->
-                                    preferences.setHideFromRecents(hide)
-                                    applyRecentsVisibility()
-                                },
                                 onOpenAbout = { push("about") }
                             )
                         } }
@@ -216,11 +212,15 @@ class MainActivity : AppCompatActivity() {
                         val section = SettingsSection.entries.firstOrNull { "settings:${it.name}" == top }
                         if (section == null) LaunchedEffect(top) { pop() }
                         else SettingsSectionScreen(
-                            section, controller, onBack = pop,
+                            section, controller, preferences, onBack = pop,
                             onOpenSpool = { push("spool") }, onOpenSessions = { push("sessions") }, onOpenExport = { push("export") },
                             onOpenPairing = { push("pairing") },
                             onOpenNetwork = { push("network-adb") },
                             onOpenMonitoringExclusions = { push("monitoring-exclusions") },
+                            onHideFromRecentsChange = { hide ->
+                                preferences.setHideFromRecents(hide)
+                                applyRecentsVisibility()
+                            },
                             onOpenMonitor = {
                                 (1..stack.size).forEach { pages.removeState(pageKey(it)) }
                                 stack = listOf()

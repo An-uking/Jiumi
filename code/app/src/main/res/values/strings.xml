@@ -61,6 +61,8 @@
     <string name="section_appearance">Appearance</string>
     <string name="settings_theme">Theme</string>
     <string name="settings_language">Language</string>
+    <string name="settings_hide_from_recents">Hide from recent apps</string>
+    <string name="settings_hide_from_recents_desc">You can still open Jiumi from your home screen.</string>
     <string name="theme_system">Follow system</string>
     <string name="theme_light">Light</string>
     <string name="theme_dark">Dark</string>

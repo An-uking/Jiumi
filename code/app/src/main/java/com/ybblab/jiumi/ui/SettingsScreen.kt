@@ -72,12 +72,14 @@ internal fun SettingsScreen(
     onOpenSection: (SettingsSection) -> Unit,
     onOpenTheme: () -> Unit,
     onOpenLanguage: () -> Unit,
+    onHideFromRecentsChange: (Boolean) -> Unit,
     onOpenAbout: () -> Unit
 ) {
     val list = androidx.compose.foundation.lazy.rememberLazyListState()
     val scrolled by remember { androidx.compose.runtime.derivedStateOf { list.canScrollBackward } }
     val update by com.ybblab.jiumi.update.UpdateNotice.available.collectAsStateWithLifecycle()
     val theme by preferences.themeMode.collectAsStateWithLifecycle()
+    val hideFromRecents by preferences.hideFromRecents.collectAsStateWithLifecycle()
     HidingTopBar(stringResource(R.string.settings_title), scrolled) { top ->
         LazyColumn(
             state = list,
@@ -112,6 +114,15 @@ internal fun SettingsScreen(
                     ListRow(stringResource(R.string.settings_language), subtitle = languageLabel(preferences.language),
                         leading = { IconTile(JiumiIcons.Languages) }, onClick = onOpenLanguage) {
                         Chevron()
+                    }
+                    InsetDivider()
+                    ListRow(
+                        stringResource(R.string.settings_hide_from_recents),
+                        subtitle = stringResource(R.string.settings_hide_from_recents_desc),
+                        leading = { IconTile(JiumiIcons.Layers) },
+                        onClick = { onHideFromRecentsChange(!hideFromRecents) }
+                    ) {
+                        JiumiSwitch(hideFromRecents, onCheckedChange = onHideFromRecentsChange)
                     }
                 }
             }

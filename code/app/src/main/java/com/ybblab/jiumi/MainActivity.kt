@@ -4,6 +4,7 @@
 package com.ybblab.jiumi
 
 import android.Manifest
+import android.app.ActivityManager
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
@@ -177,6 +178,10 @@ class MainActivity : AppCompatActivity() {
                                 onOpenSection = { push("settings:${it.name}") },
                                 onOpenTheme = { push("theme") },
                                 onOpenLanguage = { push("language") },
+                                onHideFromRecentsChange = { hide ->
+                                    preferences.setHideFromRecents(hide)
+                                    applyRecentsVisibility()
+                                },
                                 onOpenAbout = { push("about") }
                             )
                         } }
@@ -247,8 +252,15 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        applyRecentsVisibility()
         controller.onAppResumed()
         controller.refresh()
+    }
+
+    private fun applyRecentsVisibility() {
+        val activityManager = getSystemService(ActivityManager::class.java)
+        activityManager.appTasks.firstOrNull { it.taskInfo?.taskId == taskId }
+            ?.setExcludeFromRecents(preferences.hideFromRecents.value)
     }
 
     override fun onPause() {

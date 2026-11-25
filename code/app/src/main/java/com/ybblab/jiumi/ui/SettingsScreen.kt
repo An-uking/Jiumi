@@ -409,9 +409,6 @@ internal fun SettingsSectionScreen(
                     }
                 }
                 SettingsSection.ADVANCED -> item {
-                    Card { ExpertModeRow(state.expertMode, controller::setExpertMode) }
-                    GroupFooter(stringResource(R.string.settings_expert_mode_desc))
-                    Spacer(Modifier.height(16.dp))
                     val hideFromRecents by preferences.hideFromRecents.collectAsStateWithLifecycle()
                     Card {
                         ListRow(
@@ -423,6 +420,9 @@ internal fun SettingsSectionScreen(
                             JiumiSwitch(hideFromRecents, onCheckedChange = onHideFromRecentsChange)
                         }
                     }
+                    Spacer(Modifier.height(16.dp))
+                    Card { ExpertModeRow(state.expertMode, controller::setExpertMode) }
+                    GroupFooter(stringResource(R.string.settings_expert_mode_desc))
                 }
             }
         }

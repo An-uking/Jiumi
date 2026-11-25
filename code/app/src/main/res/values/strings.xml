@@ -472,7 +472,7 @@
     <string name="state_suspended">Suspended</string>
     <string name="state_deleted">Uninstalled</string>
     <string name="section_advanced">Advanced</string>
-    <string name="settings_advanced_summary">Expert mode and task visibility</string>
+    <string name="settings_advanced_summary">Task visibility and expert mode</string>
     <string name="settings_hide_from_recents">Hide task card</string>
     <string name="settings_hide_from_recents_desc">When enabled, Jiumi is hidden from recent apps.</string>
     <string name="settings_manage_identity">Runs as</string>

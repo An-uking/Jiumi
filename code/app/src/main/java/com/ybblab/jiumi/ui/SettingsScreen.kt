@@ -78,7 +78,7 @@ internal fun SettingsScreen(
     val scrolled by remember { androidx.compose.runtime.derivedStateOf { list.canScrollBackward } }
     val update by com.ybblab.jiumi.update.UpdateNotice.available.collectAsStateWithLifecycle()
     val theme by preferences.themeMode.collectAsStateWithLifecycle()
-    HidingTopBar(stringResource(R.string.settings_title), scrolled) { top ->
+    HidingTopBar(stringResource(R.string.settings_title), scrolled, pinned = true) { top ->
         LazyColumn(
             state = list,
             modifier = Modifier.fillMaxSize(),

@@ -16,6 +16,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.LaunchedEffect
@@ -31,6 +32,7 @@ import com.ybblab.jiumi.ui.AttentionScreen
 import com.ybblab.jiumi.ui.ExportScreen
 import com.ybblab.jiumi.ui.GroupScreen
 import com.ybblab.jiumi.ui.HomeScreen
+import com.ybblab.jiumi.ui.TimelineSnapshot
 import com.ybblab.jiumi.ui.LanguageScreen
 import com.ybblab.jiumi.ui.SessionsScreen
 import com.ybblab.jiumi.ui.SettingsScreen
@@ -109,12 +111,19 @@ class MainActivity : AppCompatActivity() {
                 var tab by rememberSaveable { mutableStateOf(Tab.MONITOR) }
                 // Each page keeps its own state (scroll, chosen view, filters) while pages above it are open.
                 val pages = rememberSaveableStateHolder()
+                val homeTimeline = remember { TimelineSnapshot<LogEntry>() }
+                val groupTimelines = remember { mutableMapOf<String, TimelineSnapshot<LogEntry>>() }
                 val push = { route: String -> stack = stack + route }
                 // A page's state is keyed by its depth too: the same page can be open twice in the stack.
                 fun pageKey(depth: Int) = "$depth|${stack.getOrNull(depth - 1) ?: "home"}"
+                fun removePage(depth: Int) {
+                    val key = pageKey(depth)
+                    pages.removeState(key)
+                    groupTimelines.remove(key)
+                }
                 val pop = {
                     if (stack.lastOrNull() == "pairing-code") controller.cancelInAppPairing()
-                    pages.removeState(pageKey(stack.size))
+                    removePage(stack.size)
                     stack = stack.dropLast(1)
                 }
                 val openPairingOptions = { push("pairing-options") }
@@ -127,7 +136,7 @@ class MainActivity : AppCompatActivity() {
                     val r = route ?: return@LaunchedEffect
                     if (!setupDone) return@LaunchedEffect
                     if (top == "pairing-code") controller.cancelInAppPairing()
-                    (1..stack.size).forEach { pages.removeState(pageKey(it)) }
+                    (1..stack.size).forEach(::removePage)
                     tab = Tab.MONITOR
                     stack = if (r == MonitorNotice.ROUTE_MONITOR) emptyList() else listOf(r)
                     requestedRoute.value = null
@@ -164,6 +173,7 @@ class MainActivity : AppCompatActivity() {
                             Tab.MONITOR -> HomeScreen(
                                 controller = controller,
                                 labels = labels,
+                                timelineSnapshot = homeTimeline,
                                 onOpenGroup = { push("group:$it") },
                                 onOpenAttention = { push("attention:$it") },
                                 onOpenLog = openLog,
@@ -204,7 +214,8 @@ class MainActivity : AppCompatActivity() {
                         if (entry == null) LaunchedEffect(top) { pop() }
                         else LogDetailScreen(controller, labels, entry, onBack = pop, onOpenApp = openApp, onOpenLog = openLog)
                     }
-                    top.startsWith("group:") -> GroupScreen(controller, labels, top.removePrefix("group:"), onBack = pop,
+                    top.startsWith("group:") -> GroupScreen(controller, labels, top.removePrefix("group:"),
+                        groupTimelines.getOrPut(pageKey(stack.size)) { TimelineSnapshot() }, onBack = pop,
                         onOpenLog = openLog, onOpenApp = openApp)
                     top.startsWith("attention:") -> AttentionScreen(controller, labels, top.removePrefix("attention:"), onBack = pop,
                         onOpenApp = { push("app:${it.uid}|${it.pkg.orEmpty()}") })
@@ -222,7 +233,7 @@ class MainActivity : AppCompatActivity() {
                                 applyRecentsVisibility()
                             },
                             onOpenMonitor = {
-                                (1..stack.size).forEach { pages.removeState(pageKey(it)) }
+                                (1..stack.size).forEach(::removePage)
                                 stack = listOf()
                                 tab = Tab.MONITOR
                             }
@@ -241,7 +252,7 @@ class MainActivity : AppCompatActivity() {
                     top.startsWith("notice:") -> NoticeScreen(top.removePrefix("notice:").toInt(), onBack = pop)
                     top == "export" -> ExportScreen(controller, labels, onBack = pop)
                     top == "sessions" -> SessionsScreen(controller, onBack = pop, onChosen = {
-                        (1..stack.size).forEach { pages.removeState(pageKey(it)) }; stack = listOf()
+                        (1..stack.size).forEach(::removePage); stack = listOf()
                     })
                     top == "theme" -> ThemeScreen(preferences, onBack = pop)
                     top == "language" -> LanguageScreen(preferences, onBack = pop)

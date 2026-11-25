@@ -616,8 +616,6 @@ class MonitorController(
         runCatching { org.json.JSONObject(service.appAccess(pkg, key.uid, action, permission, local.value.expertMode)) }.getOrNull()
     }
 
-    internal suspend fun addNetworkManagement(key: AppKey): Boolean = networkManagement.add(key, local.value.expertMode)
-
     /** The running monitor, started (or resumed) first when it is not; null when it would not start. */
     private suspend fun ensureMonitor(): com.ybblab.jiumi.probe.IProbeService? {
         probe.service.value?.let { return it }

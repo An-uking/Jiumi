@@ -21,7 +21,6 @@ internal data class ManagedNetworkApp(
     val pkg: String,
     val uid: Int,
     val installedAt: Long,
-    val blocked: Boolean,
     val verifiedBoot: Int
 ) {
     val key: AppKey get() = AppKey(uid, pkg)
@@ -34,13 +33,18 @@ internal data class NetworkPolicy(
     val imported: Boolean = false
 ) {
     fun shouldRestore(app: ManagedNetworkApp, boot: Int): Boolean =
-        restoreEnabledAtBoot?.let { it < boot && app.blocked && app.verifiedBoot < boot } == true
+        restoreEnabledAtBoot?.let { it < boot && app.verifiedBoot < boot } == true
+
+    fun withRestriction(app: ManagedNetworkApp, blocked: Boolean): NetworkPolicy = copy(
+        apps = if (blocked) apps + (app.pkg to app) else apps - app.pkg,
+        restoreFailures = restoreFailures - app.pkg
+    )
 
     fun encode(): String = JSONObject().put("restoreEnabledAtBoot", restoreEnabledAtBoot).put("imported", imported)
         .put("apps", JSONArray().apply {
             apps.values.forEach { app ->
                 put(JSONObject().put("pkg", app.pkg).put("uid", app.uid).put("installedAt", app.installedAt)
-                    .put("blocked", app.blocked).put("verifiedBoot", app.verifiedBoot))
+                    .put("blocked", true).put("verifiedBoot", app.verifiedBoot))
             }
         }).toString()
 
@@ -58,8 +62,8 @@ internal data class NetworkPolicy(
                 val uid = row.optInt("uid", -1)
                 val installedAt = row.optLong("installedAt")
                 val boot = row.optInt("verifiedBoot", -1)
-                if (pkg.isNotEmpty() && uid >= 0 && installedAt > 0 && boot >= 0) {
-                    put(pkg, ManagedNetworkApp(pkg, uid, installedAt, row.optBoolean("blocked"), boot))
+                if (row.optBoolean("blocked") && pkg.isNotEmpty() && uid >= 0 && installedAt > 0 && boot >= 0) {
+                    put(pkg, ManagedNetworkApp(pkg, uid, installedAt, boot))
                 }
             }
         }
@@ -84,34 +88,14 @@ internal class NetworkManagement(
         save(current.copy(restoreEnabledAtBoot = enabledAt, restoreFailures = emptySet()))
     }
 
-    /** Called for the per-app permission switch. A successful change also enrolls the app. */
+    /** Only verified changes to the per-app switch update the restriction list. */
     suspend fun change(key: AppKey, blocked: Boolean, expert: Boolean): JSONObject? = transaction {
         val service = connectedProbe() ?: return@transaction JSONObject().put("lock", "monitor")
         val result = call(service, key, if (blocked) "networkDeny" else "networkAllow", expert = expert)
             ?: return@transaction null
         val app = verifiedApp(key, blocked, result)
-        if (app != null && !remember(app)) result.put("historyFailed", true)
+        if (app != null && !save(policy.value.withRestriction(app, blocked))) result.put("policySaveFailed", true)
         result
-    }
-
-    suspend fun add(key: AppKey, expert: Boolean): Boolean = transaction {
-        val service = connectedProbe() ?: return@transaction false
-        val result = call(service, key, "network", expert = expert) ?: return@transaction false
-        val pkg = key.pkg ?: return@transaction false
-        val installedAt = result.optLong("installedAt")
-        val verifiedBoot = result.optInt("boot", -1)
-        if (result.optString("lock").isNotEmpty() || installedAt <= 0 || verifiedBoot < 0 || !result.has("allowed")) {
-            return@transaction false
-        }
-        val blocked = result.optBoolean("owned") && !result.optBoolean("allowed")
-        remember(ManagedNetworkApp(pkg, key.uid, installedAt, blocked, verifiedBoot))
-    }
-
-    suspend fun remove(app: ManagedNetworkApp): Boolean = transaction {
-        val current = policy.value
-        val entry = current.apps[app.pkg] ?: return@transaction true
-        if (entry.installedAt != app.installedAt || entry.uid != app.uid || !release(entry)) return@transaction false
-        save(current.copy(apps = current.apps - entry.pkg, restoreFailures = current.restoreFailures - entry.pkg))
     }
 
     suspend fun onConnected(service: IProbeService) {
@@ -122,26 +106,22 @@ internal class NetworkManagement(
             save(current.copy(apps = NetworkPolicy.decodeApps(existing) + current.apps, imported = true))
         }
         val currentBoot = boot ?: return
-        // Each row is a separate transaction so manual changes and removals can take effect during restoration.
+        // Each row is a separate transaction so manual changes can take effect during restoration.
         for (pkg in policy.value.apps.keys) transaction {
             val current = policy.value
             val app = current.apps[pkg] ?: return@transaction
             if (!current.shouldRestore(app, currentBoot) || connectedProbe() != service) return@transaction
-            val updated = block(service, app)
-            if (updated == null || !remember(updated)) {
+            val result = call(service, app.key, "networkDeny", app.installedAt)
+            val updated = result?.let { verifiedApp(app.key, true, it) }
+            val saved = when {
+                result?.optBoolean("stale") == true -> save(current.withRestriction(app, blocked = false))
+                updated != null -> save(current.withRestriction(updated, blocked = true))
+                else -> false
+            }
+            if (!saved) {
                 policy.value = current.copy(restoreFailures = current.restoreFailures + pkg)
             }
         }
-    }
-
-    private fun block(service: IProbeService, app: ManagedNetworkApp): ManagedNetworkApp? =
-        call(service, app.key, "networkDeny", app.installedAt)?.let { verifiedApp(app.key, true, it) }
-
-    private fun release(app: ManagedNetworkApp): Boolean {
-        if (!app.blocked) return true
-        val service = connectedProbe() ?: return false
-        val result = call(service, app.key, "networkRelease", app.installedAt) ?: return false
-        return result.optBoolean("released") || result.optBoolean("stale")
     }
 
     private fun call(
@@ -157,12 +137,7 @@ internal class NetworkManagement(
         val verifiedBoot = result.optInt("boot", -1)
         if (installedAt <= 0 || verifiedBoot < 0 || result.optString("lock").isNotEmpty() || result.optBoolean("failed") ||
             !result.has("allowed") || result.optBoolean("allowed") == blocked || blocked && !result.optBoolean("owned")) return null
-        return ManagedNetworkApp(pkg, key.uid, installedAt, blocked, verifiedBoot)
-    }
-
-    private fun remember(app: ManagedNetworkApp): Boolean {
-        val current = policy.value
-        return save(current.copy(apps = current.apps + (app.pkg to app), restoreFailures = current.restoreFailures - app.pkg))
+        return ManagedNetworkApp(pkg, key.uid, installedAt, verifiedBoot)
     }
 
     @SuppressLint("UseKtx") // The KTX extension discards the result of commit().

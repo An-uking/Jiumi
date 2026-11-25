@@ -51,7 +51,7 @@ internal class AppAccess(context: Context, directory: File, private val self: St
         val ops = action.startsWith("op")
         val network = action.startsWith("network")
         if (network && permission.isNotEmpty()) {
-            val installedAt = permission.toLong().also { require(it > 0 && (action == "networkDeny" || action == "networkRelease")) }
+            val installedAt = permission.toLong().also { require(it > 0 && action == "networkDeny") }
             if (user != 0) return JSONObject().put("lock", "unknown")
             val installed = try {
                 pm.getPackageInfo(pkg, 0)
@@ -235,16 +235,10 @@ internal class AppAccess(context: Context, directory: File, private val self: St
         val before = firewall(t.pkg) ?: return JSONObject().put("lock", t.lock ?: "unsupported")
         val owned = "network:${t.identity}"
         val ownsRule = saved.optString(owned) == before.boot
-        val release = action == "networkRelease"
-        if (release && (!ownsRule || !before.denied)) {
-            // Forget this installation's stale ownership without changing any current rule.
-            if (saved.remove(owned) != null) write(saved)
-            return JSONObject().put("released", true)
-        }
         val others = !before.enabled && chainRules()?.all { it == t.uid && ownsRule } != true
         val lock = networkLock(t, warn) ?: when {
             before.denied && !ownsRule -> if (t.expert) null.also { warn += "external" } else "external"
-            others && !release -> if (t.expert) null.also { warn += "chain" } else "chain"
+            others -> if (t.expert) null.also { warn += "chain" } else "chain"
             else -> null
         }
         var error = false
@@ -253,7 +247,7 @@ internal class AppAccess(context: Context, directory: File, private val self: St
                 firewall(t.pkg) != before) {
                 return JSONObject().put("lock", "unknown")
             }
-            val allow = action == "networkAllow" || release
+            val allow = action == "networkAllow"
             if (!allow) {
                 saved.put(owned, before.boot)
                 if (!before.enabled) saved.put("chain", before.boot)
@@ -279,7 +273,6 @@ internal class AppAccess(context: Context, directory: File, private val self: St
         return JSONObject().put("lock", lock).put("allowed", !(current.enabled && current.denied))
             .put("boot", current.boot.toInt()).put("installedAt", t.installedAt)
             .put("owned", current.denied && saved.optString(owned) == current.boot)
-            .put("released", release && lock == null && !current.denied)
             .put("failed", error || action != "network" && lock != null)
     }
 
@@ -359,7 +352,7 @@ internal class AppAccess(context: Context, directory: File, private val self: St
         }
 
         private const val USER_RANGE = 100_000
-        private val actions = setOf("permissions", "allow", "deny", "denyAll", "restoreAll", "network", "networkAllow", "networkDeny", "networkRelease",
+        private val actions = setOf("permissions", "allow", "deny", "denyAll", "restoreAll", "network", "networkAllow", "networkDeny",
             "ops", "opAllow", "opDeny")
         private val opRow = Regex("""(Uid mode: )?([A-Z0-9_]+): ([a-z]+)\b.*""")
         private val opList = Regex("""[A-Z0-9_]+(?:,[A-Z0-9_]+)*""")

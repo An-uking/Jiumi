@@ -16,12 +16,10 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -66,9 +64,7 @@ fun AppAccessScreen(controller: MonitorController, labels: AppLabels, key: AppKe
     val management = controller.networkManagement
     val networkPolicy by management.state.collectAsStateWithLifecycle()
     val managed = networkPolicy.apps[key.pkg]?.takeIf { single && it.key == key }
-    var historyFailed by remember(key, kind) { mutableStateOf(false) }
-    var confirmRemoval by remember(key, kind) { mutableStateOf(false) }
-    var removalError by remember(key, kind) { mutableStateOf<Int?>(null) }
+    var policySaveFailed by remember(key, kind) { mutableStateOf(false) }
     val readAction = kind.read
     var state by remember(key, kind) { mutableStateOf<JSONObject?>(null) }
     var pending by remember(key, kind) { mutableStateOf(true) }
@@ -76,11 +72,11 @@ fun AppAccessScreen(controller: MonitorController, labels: AppLabels, key: AppKe
     fun refresh(action: String, permission: String = "") {
         if (pending) return
         pending = true
-        historyFailed = false
+        policySaveFailed = false
         lastAction = action to permission
         scope.launch {
             state = controller.appAccess(key, action, permission).also {
-                historyFailed = it?.optBoolean("historyFailed") == true
+                policySaveFailed = it?.optBoolean("policySaveFailed") == true
             }
             pending = false
         }
@@ -132,7 +128,7 @@ fun AppAccessScreen(controller: MonitorController, labels: AppLabels, key: AppKe
     val installedAt = state?.optLong("installedAt")?.takeIf { it > 0 }
     val trackedInstallation = managed?.takeIf { installedAt == null || it.installedAt == installedAt }
     val boot = management.boot
-    val restoreStatus = if (trackedInstallation?.blocked == true && boot != trackedInstallation.verifiedBoot) {
+    val restoreStatus = if (trackedInstallation != null && boot != trackedInstallation.verifiedBoot) {
         when {
             boot == null -> R.string.network_management_status_unknown
             trackedInstallation.pkg in networkPolicy.restoreFailures -> R.string.network_management_restore_failed
@@ -218,7 +214,7 @@ fun AppAccessScreen(controller: MonitorController, labels: AppLabels, key: AppKe
         if (single && (readable || lock.isNotEmpty() && lock != "unknown" && lock != "monitor")) {
             val allowedBySystem = state?.optBoolean("allowed") == true
             // The switch can clear a saved restriction that's still waiting to be restored.
-            val allowSelected = allowedBySystem && trackedInstallation?.blocked != true
+            val allowSelected = allowedBySystem && trackedInstallation == null
             Card {
                 ListRow(
                     stringResource(R.string.access_network_allow),
@@ -234,20 +230,6 @@ fun AppAccessScreen(controller: MonitorController, labels: AppLabels, key: AppKe
                     if (lock.isEmpty()) JiumiSwitch(allowSelected, enabled = !pending) {
                         refresh(if (it) "networkAllow" else "networkDeny")
                     } else TrailingValue(stringResource(R.string.access_read_only))
-                }
-                if (lock.isEmpty() && readable && installedAt != null && trackedInstallation == null) {
-                    InsetDivider()
-                    ListRow(stringResource(R.string.network_management_add),
-                        onClick = if (pending) null else ({
-                            pending = true
-                            scope.launch {
-                                try {
-                                    historyFailed = !controller.addNetworkManagement(key)
-                                } finally {
-                                    pending = false
-                                }
-                            }
-                        })) { Chevron() }
                 }
             }
             if (lock.isEmpty()) GroupFooter(stringResource(R.string.access_network_note))
@@ -332,47 +314,10 @@ fun AppAccessScreen(controller: MonitorController, labels: AppLabels, key: AppKe
                 "chain" -> GroupFooter(stringResource(R.string.access_warn_chain), warning = true)
             }
         }
-        if (single && historyFailed) GroupFooter(stringResource(R.string.network_management_save_error), warning = true)
+        if (single && policySaveFailed) GroupFooter(stringResource(R.string.network_management_save_error), warning = true)
         if (restoreStatus != null && (!readable || lock.isNotEmpty())) {
             GroupFooter(stringResource(restoreStatus), warning = restoreStatus == R.string.network_management_restore_failed)
         }
-        if (managed != null) {
-            Spacer(Modifier.height(16.dp))
-            Card {
-                ListRow(stringResource(R.string.network_management_remove), leading = { IconTile(JiumiIcons.Close) },
-                    onClick = if (!pending) ({ confirmRemoval = true }) else null)
-            }
-            removalError?.let { GroupFooter(stringResource(it), warning = true) }
-        }
-    }
-    if (confirmRemoval && managed != null) {
-        AlertDialog(
-            onDismissRequest = { confirmRemoval = false },
-            title = { Text(stringResource(R.string.network_management_remove)) },
-            text = { Text(stringResource(R.string.network_management_remove_desc, labels.label(key))) },
-            dismissButton = {
-                TextButton(onClick = { confirmRemoval = false }) { Text(stringResource(R.string.action_cancel)) }
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    confirmRemoval = false
-                    pending = true
-                    removalError = null
-                    scope.launch {
-                        try {
-                            if (management.remove(managed)) {
-                                state = controller.appAccess(key, readAction)
-                            } else {
-                                removalError = if (managed.blocked && !monitor.running) R.string.network_management_connect
-                                    else R.string.network_management_change_error
-                            }
-                        } finally {
-                            pending = false
-                        }
-                    }
-                }) { Text(stringResource(R.string.network_management_remove)) }
-            }
-        )
     }
 }
 

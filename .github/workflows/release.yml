@@ -14,7 +14,11 @@ on:
         required: true
         type: string
       release_notes_zh:
-        description: Simplified Chinese release and in-app update notes
+        description: Simplified Chinese in-app update notes
+        required: true
+        type: string
+      release_body:
+        description: Bilingual GitHub release body
         required: true
         type: string
 permissions:
@@ -46,9 +50,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_NOTES_ZH: ${{ inputs.release_notes_zh }}
+          RELEASE_BODY: ${{ inputs.release_body }}
         run: |
+          test -n "${RELEASE_BODY//[[:space:]]/}"
           git merge-base --is-ancestor "refs/tags/$RELEASE_TAG^{commit}" origin/main
           python3 code/scripts/release.py identity --tag "$RELEASE_TAG" --output "$RUNNER_TEMP/release"
+          printf '%s\n' "$RELEASE_BODY" > "$RUNNER_TEMP/release/release-notes.md"
           if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo 'A release or draft already exists for this tag; its assets will not be replaced'; exit 1
           fi
@@ -93,11 +100,6 @@ jobs:
           flags=()
           if [[ "$RELEASE_TAG" == *-* ]]; then flags+=(--prerelease); fi
           release_dir="$RUNNER_TEMP/release"
-          {
-            cat "$release_dir/notes.zh.md"
-            printf '\n---\n\n'
-            cat "$release_dir/notes.md"
-          } > "$release_dir/release-notes.md"
           gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --draft "${flags[@]}" \
-            --title "Jiumi ${RELEASE_TAG#v}" --notes-file "$release_dir/release-notes.md" \
+            --notes-file "$release_dir/release-notes.md" \
             "$release_dir/"*.apk "$release_dir/"*.sha256 "$release_dir/release.json"

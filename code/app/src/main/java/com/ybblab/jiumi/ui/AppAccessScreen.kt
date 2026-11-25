@@ -61,6 +61,8 @@ fun AppAccessScreen(controller: MonitorController, labels: AppLabels, key: AppKe
     val scope = rememberCoroutineScope()
     val monitor by controller.state.collectAsStateWithLifecycle()
     val single = kind != AccessKind.PERMISSIONS
+    val networkPolicy by controller.networkManagement.state.collectAsStateWithLifecycle()
+    var historyFailed by remember(key, kind) { mutableStateOf(false) }
     val readAction = kind.read
     var state by remember(key, kind) { mutableStateOf<JSONObject?>(null) }
     var pending by remember(key, kind) { mutableStateOf(true) }
@@ -68,9 +70,12 @@ fun AppAccessScreen(controller: MonitorController, labels: AppLabels, key: AppKe
     fun refresh(action: String, permission: String = "") {
         if (pending) return
         pending = true
+        historyFailed = false
         lastAction = action to permission
         scope.launch {
-            state = controller.appAccess(key, action, permission)
+            state = controller.appAccess(key, action, permission).also {
+                historyFailed = it?.optBoolean("historyFailed") == true
+            }
             pending = false
         }
     }
@@ -206,8 +211,24 @@ fun AppAccessScreen(controller: MonitorController, labels: AppLabels, key: AppKe
                         refresh(if (it) "networkAllow" else "networkDeny")
                     } else TrailingValue(stringResource(R.string.access_read_only))
                 }
+                val managed = networkPolicy.apps[key.pkg]
+                if (lock.isEmpty() && readable && managed?.installedAt != state?.optLong("installedAt")) {
+                    InsetDivider()
+                    ListRow(stringResource(R.string.network_management_add),
+                        onClick = if (pending) null else ({
+                            pending = true
+                            scope.launch {
+                                try {
+                                    historyFailed = !controller.addNetworkManagement(key)
+                                } finally {
+                                    pending = false
+                                }
+                            }
+                        })) { Chevron() }
+                }
             }
             if (lock.isEmpty()) GroupFooter(stringResource(R.string.access_network_note))
+            if (historyFailed) GroupFooter(stringResource(R.string.network_management_save_error), warning = true)
         } else if (!single && readable) {
             if (editable.isNotEmpty()) {
                 Card {

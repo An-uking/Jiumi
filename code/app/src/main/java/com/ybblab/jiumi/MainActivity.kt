@@ -38,6 +38,7 @@ import com.ybblab.jiumi.ui.SessionsScreen
 import com.ybblab.jiumi.ui.SettingsScreen
 import com.ybblab.jiumi.ui.SettingsSection
 import com.ybblab.jiumi.ui.MonitoringExclusionsScreen
+import com.ybblab.jiumi.ui.NetworkManagementScreen
 import com.ybblab.jiumi.ui.SettingsSectionScreen
 import com.ybblab.jiumi.ui.SpoolScreen
 import com.ybblab.jiumi.ui.ThemeScreen
@@ -228,6 +229,7 @@ class MainActivity : AppCompatActivity() {
                             onOpenPairing = { push("pairing") },
                             onOpenNetwork = { push("network-adb") },
                             onOpenMonitoringExclusions = { push("monitoring-exclusions") },
+                            onOpenNetworkManagement = { push("network-management") },
                             onHideFromRecentsChange = { hide ->
                                 preferences.setHideFromRecents(hide)
                                 applyRecentsVisibility()
@@ -247,6 +249,7 @@ class MainActivity : AppCompatActivity() {
                         onOpenWirelessDebugging = ::openPairingSettingsForInAppCode)
                     top == "spool" -> SpoolScreen(controller, onBack = pop)
                     top == "monitoring-exclusions" -> MonitoringExclusionsScreen(controller, labels, onBack = pop)
+                    top == "network-management" -> NetworkManagementScreen(controller, labels, onBack = pop)
                     top == "about" -> AboutScreen(labels, onBack = pop, onOpenLicenses = { push("licenses") })
                     top == "licenses" -> LicensesScreen(onBack = pop, onOpenNotice = { push("notice:$it") })
                     top.startsWith("notice:") -> NoticeScreen(top.removePrefix("notice:").toInt(), onBack = pop)

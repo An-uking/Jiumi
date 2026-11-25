@@ -148,6 +148,7 @@ internal fun SettingsSectionScreen(
     onOpenPairing: () -> Unit,
     onOpenNetwork: () -> Unit,
     onOpenMonitoringExclusions: () -> Unit,
+    onOpenNetworkManagement: () -> Unit,
     onHideFromRecentsChange: (Boolean) -> Unit,
     onOpenMonitor: () -> Unit
 ) {
@@ -351,6 +352,9 @@ internal fun SettingsSectionScreen(
                             ListRow(stringResource(R.string.settings_manage_identity), leading = { IconTile(JiumiIcons.Shield) }) {
                                 TrailingValue(stringResource(if (state.manageAsRoot) R.string.manage_identity_root else R.string.manage_identity_shell))
                             }
+                            InsetDivider()
+                            ListRow(stringResource(R.string.network_management_title), leading = { IconTile(JiumiIcons.Network) },
+                                onClick = onOpenNetworkManagement) { Chevron() }
                             InsetDivider()
                             ListRow(
                                 stringResource(R.string.settings_auto_refreeze),

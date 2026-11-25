@@ -107,19 +107,6 @@ internal class NetworkManagement(
         remember(ManagedNetworkApp(pkg, key.uid, installedAt, blocked, verifiedBoot))
     }
 
-    suspend fun setBlocked(app: ManagedNetworkApp, blocked: Boolean): Boolean = transaction {
-        val current = policy.value.apps[app.pkg] ?: return@transaction false
-        if (current.installedAt != app.installedAt || current.uid != app.uid) return@transaction false
-        if (blocked) {
-            val service = connectedProbe() ?: return@transaction false
-            val updated = block(service, current) ?: return@transaction false
-            remember(updated)
-        } else {
-            if (!release(current)) return@transaction false
-            remember(current.copy(blocked = false))
-        }
-    }
-
     suspend fun remove(app: ManagedNetworkApp): Boolean = transaction {
         val current = policy.value
         val entry = current.apps[app.pkg] ?: return@transaction true

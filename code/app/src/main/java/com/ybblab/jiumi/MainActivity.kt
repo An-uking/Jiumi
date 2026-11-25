@@ -28,6 +28,7 @@ import com.ybblab.jiumi.ui.LogDetailScreen
 import com.ybblab.jiumi.ui.OpenedLogs
 import com.ybblab.jiumi.ui.AppDetailScreen
 import com.ybblab.jiumi.ui.AppLabels
+import com.ybblab.jiumi.ui.AccessKind
 import com.ybblab.jiumi.ui.AttentionScreen
 import com.ybblab.jiumi.ui.ExportScreen
 import com.ybblab.jiumi.ui.GroupScreen
@@ -129,6 +130,9 @@ class MainActivity : AppCompatActivity() {
                 }
                 val openPairingOptions = { push("pairing-options") }
                 val openApp = { key: AppKey -> push("app:${key.uid}|${key.pkg.orEmpty()}") }
+                val openAccess = { key: AppKey, kind: AccessKind ->
+                    push("access:${kind.name}|${key.uid}|${key.pkg.orEmpty()}")
+                }
                 val openLog = { entry: LogEntry -> push("log:${OpenedLogs.put(entry)}") }
                 val top = stack.lastOrNull()
                 val setupDone by preferences.setupDone.collectAsStateWithLifecycle()
@@ -195,9 +199,10 @@ class MainActivity : AppCompatActivity() {
                     }
                     top.startsWith("app:") -> {
                         val (uid, pkg) = top.removePrefix("app:").split('|', limit = 2)
-                        AppDetailScreen(controller, labels, AppKey(uid.toInt(), pkg.ifEmpty { null }), onBack = pop, onOpenLog = openLog,
+                        val key = AppKey(uid.toInt(), pkg.ifEmpty { null })
+                        AppDetailScreen(controller, labels, key, onBack = pop, onOpenLog = openLog,
                             onOpenAppManagement = { push("settings:${SettingsSection.MANAGEMENT.name}") },
-                            onOpenAccess = { kind -> push("access:${kind.name}|${uid}|${pkg}") })
+                            onOpenAccess = { kind -> openAccess(key, kind) })
                     }
                     top.startsWith("apex:") ->
                         SystemModuleScreen(controller, labels, top.removePrefix("apex:"), onBack = pop, onOpenApp = openApp)
@@ -205,7 +210,7 @@ class MainActivity : AppCompatActivity() {
                         val (mode, uid, pkg) = top.removePrefix("access:").split('|', limit = 3)
                         com.ybblab.jiumi.ui.AppAccessScreen(
                             controller, labels, AppKey(uid.toInt(), pkg),
-                            com.ybblab.jiumi.ui.AccessKind.entries.firstOrNull { it.name == mode } ?: com.ybblab.jiumi.ui.AccessKind.PERMISSIONS,
+                            AccessKind.entries.firstOrNull { it.name == mode } ?: AccessKind.PERMISSIONS,
                             onBack = pop
                         )
                     }
@@ -249,7 +254,8 @@ class MainActivity : AppCompatActivity() {
                         onOpenWirelessDebugging = ::openPairingSettingsForInAppCode)
                     top == "spool" -> SpoolScreen(controller, onBack = pop)
                     top == "monitoring-exclusions" -> MonitoringExclusionsScreen(controller, labels, onBack = pop)
-                    top == "network-management" -> NetworkManagementScreen(controller, labels, onBack = pop)
+                    top == "network-management" -> NetworkManagementScreen(controller, labels,
+                        onOpenApp = { openAccess(it, AccessKind.NETWORK) }, onBack = pop)
                     top == "about" -> AboutScreen(labels, onBack = pop, onOpenLicenses = { push("licenses") })
                     top == "licenses" -> LicensesScreen(onBack = pop, onOpenNotice = { push("notice:$it") })
                     top.startsWith("notice:") -> NoticeScreen(top.removePrefix("notice:").toInt(), onBack = pop)

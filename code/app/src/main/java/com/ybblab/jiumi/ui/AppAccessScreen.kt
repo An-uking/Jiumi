@@ -16,10 +16,12 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -61,8 +63,12 @@ fun AppAccessScreen(controller: MonitorController, labels: AppLabels, key: AppKe
     val scope = rememberCoroutineScope()
     val monitor by controller.state.collectAsStateWithLifecycle()
     val single = kind != AccessKind.PERMISSIONS
-    val networkPolicy by controller.networkManagement.state.collectAsStateWithLifecycle()
+    val management = controller.networkManagement
+    val networkPolicy by management.state.collectAsStateWithLifecycle()
+    val managed = networkPolicy.apps[key.pkg]?.takeIf { single && it.key == key }
     var historyFailed by remember(key, kind) { mutableStateOf(false) }
+    var confirmRemoval by remember(key, kind) { mutableStateOf(false) }
+    var removalError by remember(key, kind) { mutableStateOf<Int?>(null) }
     val readAction = kind.read
     var state by remember(key, kind) { mutableStateOf<JSONObject?>(null) }
     var pending by remember(key, kind) { mutableStateOf(true) }
@@ -117,12 +123,23 @@ fun AppAccessScreen(controller: MonitorController, labels: AppLabels, key: AppKe
             opsPending = false
         }
     }
-    LaunchedEffect(key, kind, monitor.running) {
+    LaunchedEffect(key, kind, monitor.running, managed?.verifiedBoot) {
         state = controller.appAccess(key, readAction)
         pending = false
         if (kind == AccessKind.PERMISSIONS) readOps(state)
     }
     val lock = state?.optString("lock").orEmpty()
+    val installedAt = state?.optLong("installedAt")?.takeIf { it > 0 }
+    val trackedInstallation = managed?.takeIf { installedAt == null || it.installedAt == installedAt }
+    val boot = management.boot
+    val restoreStatus = if (trackedInstallation?.blocked == true && boot != trackedInstallation.verifiedBoot) {
+        when {
+            boot == null -> R.string.network_management_status_unknown
+            trackedInstallation.pkg in networkPolicy.restoreFailures -> R.string.network_management_restore_failed
+            networkPolicy.shouldRestore(trackedInstallation, boot) -> R.string.network_management_restore_pending
+            else -> R.string.network_management_not_restored
+        }
+    } else null
     val groups = remember(context) {
         val rules = JSONObject(context.assets.open("rules/permission_groups.json").bufferedReader().use { it.readText() })
         buildMap {
@@ -199,20 +216,26 @@ fun AppAccessScreen(controller: MonitorController, labels: AppLabels, key: AppKe
             } else GroupTitle(stringResource(R.string.access_scope))
         }
         if (single && (readable || lock.isNotEmpty() && lock != "unknown" && lock != "monitor")) {
-            val allowed = state?.optBoolean("allowed") == true
+            val allowedBySystem = state?.optBoolean("allowed") == true
+            // The switch can clear a saved restriction that's still waiting to be restored.
+            val allowSelected = allowedBySystem && trackedInstallation?.blocked != true
             Card {
                 ListRow(
                     stringResource(R.string.access_network_allow),
-                    subtitle = if (lock.isEmpty()) stringResource(if (allowed) R.string.access_not_blocked else R.string.access_blocked) else null,
+                    subtitle = if (lock.isEmpty()) {
+                        stringResource(restoreStatus ?: if (allowedBySystem) R.string.access_not_blocked else R.string.access_blocked)
+                    } else null,
+                    subtitleColor = if (restoreStatus == R.string.network_management_restore_failed) StatusWarning else Ink.secondary,
                     leading = { IconTile(JiumiIcons.Network) },
-                    onClick = if (!pending && lock.isEmpty()) ({ refresh(if (allowed) "networkDeny" else "networkAllow") }) else null
+                    onClick = if (!pending && lock.isEmpty()) ({
+                        refresh(if (allowSelected) "networkDeny" else "networkAllow")
+                    }) else null
                 ) {
-                    if (lock.isEmpty()) JiumiSwitch(allowed, enabled = !pending) {
+                    if (lock.isEmpty()) JiumiSwitch(allowSelected, enabled = !pending) {
                         refresh(if (it) "networkAllow" else "networkDeny")
                     } else TrailingValue(stringResource(R.string.access_read_only))
                 }
-                val managed = networkPolicy.apps[key.pkg]
-                if (lock.isEmpty() && readable && managed?.installedAt != state?.optLong("installedAt")) {
+                if (lock.isEmpty() && readable && installedAt != null && trackedInstallation == null) {
                     InsetDivider()
                     ListRow(stringResource(R.string.network_management_add),
                         onClick = if (pending) null else ({
@@ -228,7 +251,6 @@ fun AppAccessScreen(controller: MonitorController, labels: AppLabels, key: AppKe
                 }
             }
             if (lock.isEmpty()) GroupFooter(stringResource(R.string.access_network_note))
-            if (historyFailed) GroupFooter(stringResource(R.string.network_management_save_error), warning = true)
         } else if (!single && readable) {
             if (editable.isNotEmpty()) {
                 Card {
@@ -310,6 +332,47 @@ fun AppAccessScreen(controller: MonitorController, labels: AppLabels, key: AppKe
                 "chain" -> GroupFooter(stringResource(R.string.access_warn_chain), warning = true)
             }
         }
+        if (single && historyFailed) GroupFooter(stringResource(R.string.network_management_save_error), warning = true)
+        if (restoreStatus != null && (!readable || lock.isNotEmpty())) {
+            GroupFooter(stringResource(restoreStatus), warning = restoreStatus == R.string.network_management_restore_failed)
+        }
+        if (managed != null) {
+            Spacer(Modifier.height(16.dp))
+            Card {
+                ListRow(stringResource(R.string.network_management_remove), leading = { IconTile(JiumiIcons.Close) },
+                    onClick = if (!pending) ({ confirmRemoval = true }) else null)
+            }
+            removalError?.let { GroupFooter(stringResource(it), warning = true) }
+        }
+    }
+    if (confirmRemoval && managed != null) {
+        AlertDialog(
+            onDismissRequest = { confirmRemoval = false },
+            title = { Text(stringResource(R.string.network_management_remove)) },
+            text = { Text(stringResource(R.string.network_management_remove_desc, labels.label(key))) },
+            dismissButton = {
+                TextButton(onClick = { confirmRemoval = false }) { Text(stringResource(R.string.action_cancel)) }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmRemoval = false
+                    pending = true
+                    removalError = null
+                    scope.launch {
+                        try {
+                            if (management.remove(managed)) {
+                                state = controller.appAccess(key, readAction)
+                            } else {
+                                removalError = if (managed.blocked && !monitor.running) R.string.network_management_connect
+                                    else R.string.network_management_change_error
+                            }
+                        } finally {
+                            pending = false
+                        }
+                    }
+                }) { Text(stringResource(R.string.network_management_remove)) }
+            }
+        )
     }
 }
 

@@ -3,15 +3,13 @@
 
 package com.ybblab.jiumi.ui
 
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -26,52 +24,50 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ybblab.jiumi.MonitorController
 import com.ybblab.jiumi.R
-import com.ybblab.jiumi.data.ManagedNetworkApp
+import com.ybblab.jiumi.data.AppKey
 import com.ybblab.jiumi.ui.icons.JiumiIcons
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 @Composable
-internal fun NetworkManagementScreen(controller: MonitorController, labels: AppLabels, onBack: () -> Unit) {
+internal fun NetworkManagementScreen(
+    controller: MonitorController, labels: AppLabels, onOpenApp: (AppKey) -> Unit, onBack: () -> Unit
+) {
     val management = controller.networkManagement
     val policy by management.state.collectAsStateWithLifecycle()
-    val monitor by controller.state.collectAsStateWithLifecycle()
     val autoRestore = policy.restoreEnabledAtBoot != null
     val boot = management.boot
     val scope = rememberCoroutineScope()
     var query by rememberSaveable { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
-    var failure by remember { mutableStateOf<Pair<String?, Int>?>(null) }
-    var removal by remember { mutableStateOf<ManagedNetworkApp?>(null) }
-    val names by produceState(emptyMap<String, String>(), policy.apps.keys, labels) {
-        value = withContext(Dispatchers.IO) { policy.apps.mapValues { (_, app) -> labels.label(app.key) } }
+    var saveFailed by remember { mutableStateOf(false) }
+    val keys = remember(policy.apps) { policy.apps.values.map { it.key } }
+    val names by produceState(emptyMap<AppKey, String>(), keys, labels) {
+        value = withContext(Dispatchers.IO) { keys.associateWith(labels::label) }
     }
     val search = query.trim()
     val apps = remember(policy.apps, names, search) {
         policy.apps.values.filter { it.pkg.contains(search, ignoreCase = true) ||
-            names[it.pkg]?.contains(search, ignoreCase = true) == true }
-            .sortedBy { (names[it.pkg] ?: it.pkg).lowercase() }
-    }
-    fun change(failureMessage: Int, pkg: String? = null, update: suspend () -> Boolean) {
-        if (busy) return
-        busy = true
-        failure = null
-        scope.launch {
-            try {
-                if (!update()) failure = pkg to failureMessage
-            } finally {
-                busy = false
-            }
-        }
+            names[it.key]?.contains(search, ignoreCase = true) == true }
+            .sortedBy { (names[it.key] ?: it.pkg).lowercase() }
     }
     SubScreen(stringResource(R.string.network_management_title), onBack) { padding ->
-        LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(16.dp)) {
             item(key = "restore") {
                 val enabled = !busy && (boot != null || autoRestore)
-                val toggle: (Boolean) -> Unit = {
-                    change(R.string.network_management_save_error) { management.setAutoRestore(it) }
+                val toggle: (Boolean) -> Unit = { on ->
+                    if (!busy) {
+                        busy = true
+                        saveFailed = false
+                        scope.launch {
+                            try {
+                                saveFailed = !management.setAutoRestore(on)
+                            } finally {
+                                busy = false
+                            }
+                        }
+                    }
                 }
                 Card {
                     ListRow(stringResource(R.string.network_management_restore),
@@ -81,53 +77,26 @@ internal fun NetworkManagementScreen(controller: MonitorController, labels: AppL
                     }
                 }
                 GroupFooter(stringResource(R.string.network_management_restore_desc))
-                failure?.takeIf { it.first == null }?.let { GroupFooter(stringResource(it.second), warning = true) }
+                if (saveFailed) GroupFooter(stringResource(R.string.network_management_save_error), warning = true)
+                Spacer(Modifier.height(12.dp))
             }
-            if (policy.apps.isNotEmpty()) item(key = "search") { SearchField(query) { query = it } }
+            if (policy.apps.isNotEmpty()) item(key = "search") {
+                SearchField(query) { query = it }
+                Spacer(Modifier.height(12.dp))
+            }
             if (apps.isEmpty()) item(key = "empty") {
                 EmptyCard(stringResource(if (policy.apps.isEmpty()) R.string.network_management_empty else R.string.apps_empty_search))
             }
-            items(apps, key = { it.pkg }) { app ->
-                val status = when {
-                    !app.blocked -> R.string.access_not_blocked
-                    boot == app.verifiedBoot -> R.string.network_management_block_verified
-                    boot == null -> R.string.network_management_status_unknown
-                    app.pkg in policy.restoreFailures -> R.string.network_management_restore_failed
-                    policy.shouldRestore(app, boot) -> R.string.network_management_restore_pending
-                    else -> R.string.network_management_not_restored
-                }
-                val canChange = !busy && monitor.running
-                val toggle: (Boolean) -> Unit = {
-                    change(R.string.network_management_change_error, app.pkg) { management.setBlocked(app, it) }
-                }
-                Card {
-                    ListRow(names[app.pkg] ?: app.pkg, app.pkg, leading = { AppIcon(labels, app.pkg, 32) })
-                    InsetDivider()
-                    ListRow(stringResource(R.string.network_management_block), stringResource(status),
-                        onClick = if (canChange) ({ toggle(!app.blocked) }) else null) {
-                        JiumiSwitch(app.blocked, canChange, toggle)
+            itemsIndexed(apps, key = { _, app -> app.pkg }) { index, app ->
+                val name = names[app.key] ?: app.pkg
+                CardSlice(first = index == 0, last = index == apps.lastIndex) {
+                    if (index > 0) InsetDivider()
+                    ListRow(name, subtitle = app.pkg.takeIf { it != name }, leading = { AppIcon(labels, app.pkg, LEADING_SIZE) },
+                        onClick = { onOpenApp(app.key) }) {
+                        Chevron()
                     }
-                    InsetDivider()
-                    ListRow(stringResource(R.string.network_management_remove),
-                        onClick = if (!busy) ({ removal = app }) else null)
                 }
-                failure?.takeIf { it.first == app.pkg }?.let { GroupFooter(stringResource(it.second), warning = true) }
             }
         }
-    }
-    removal?.let { app ->
-        AlertDialog(
-            onDismissRequest = { removal = null },
-            title = { Text(stringResource(R.string.network_management_remove)) },
-            text = { Text(stringResource(R.string.network_management_remove_desc, names[app.pkg] ?: app.pkg)) },
-            dismissButton = { TextButton(onClick = { removal = null }) { Text(stringResource(R.string.action_cancel)) } },
-            confirmButton = {
-                TextButton(onClick = {
-                    removal = null
-                    change(if (app.blocked && !monitor.running) R.string.network_management_connect
-                        else R.string.network_management_change_error, app.pkg) { management.remove(app) }
-                }) { Text(stringResource(R.string.network_management_remove)) }
-            }
-        )
     }
 }

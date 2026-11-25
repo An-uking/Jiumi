@@ -809,14 +809,12 @@
     <string name="appop_write_settings">修改系统设置</string>
     <string name="appop_all_files">访问所有文件</string>
     <string name="appop_usage_stats">读取应用使用情况</string>
-    <string name="access_network_note">使用 Android 14 及以上系统自带的防火墙。手机重启后系统会清除规则，可在「设置 → 应用管理 → 联网管理清单」开启自动恢复。</string>
-    <string name="network_management_title">联网管理清单</string>
-    <string name="network_management_add">加入联网管理清单</string>
+    <string name="access_network_note">使用 Android 14 及以上系统自带的防火墙。手机重启后系统会清除规则，可在「设置 → 应用管理 → 应用联网管理清单」开启自动恢复。</string>
+    <string name="network_management_title">应用联网管理清单</string>
+    <string name="network_management_add">加入应用联网管理清单</string>
     <string name="network_management_restore">重启后自动恢复联网限制</string>
     <string name="network_management_restore_desc">清单会一直保留。开启后，手机重启并连上监测探针时，揪咪会恢复清单里开启的联网限制。</string>
     <string name="network_management_empty">可以从应用的「联网管理」加入清单。禁止该应用联网后，也会自动加入。</string>
-    <string name="network_management_block">禁止联网</string>
-    <string name="network_management_block_verified">本次开机已确认限制</string>
     <string name="network_management_remove">移除管理</string>
     <string name="network_management_remove_desc">将 %1$s 从清单移除，并解除揪咪为它设置的联网限制。</string>
     <string name="network_management_restore_pending">重启后待恢复</string>
